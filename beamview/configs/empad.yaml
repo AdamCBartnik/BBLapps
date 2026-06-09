@@ -1,0 +1,5 @@
+name: B29 EMPAD
+epics_prefix: ""
+
+cameras:
+  - id: "EPICS:EMPAD"
