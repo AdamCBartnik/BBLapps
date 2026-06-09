@@ -625,7 +625,7 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         self._colormap_combo = QComboBox()
         self._colormap_combo.addItems(COLORMAPS)
-        self._colormap_combo.setCurrentText("Gray")
+        self._colormap_combo.setCurrentText("Freeze")
         self._colormap_combo.currentTextChanged.connect(self._apply_colormap)
         self._colormap_combo.currentTextChanged.connect(self._trigger_redraw)
         self._colormap_flip = QCheckBox("Reverse")
