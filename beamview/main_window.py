@@ -549,7 +549,7 @@ class MainWindow(QMainWindow):
         self._sgauss_width_spin.editingFinished.connect(self._trigger_redraw)
         self._sgauss_width_spin.valueChanged.connect(self._trigger_redraw)
         self._sgauss_power_spin = QDoubleSpinBox()
-        self._sgauss_power_spin.setRange(0.01, 10.0)
+        self._sgauss_power_spin.setRange(0.1, 10.0)
         self._sgauss_power_spin.setValue(2.0)
         self._sgauss_power_spin.setSingleStep(0.1)
         self._sgauss_power_spin.setDecimals(2)
