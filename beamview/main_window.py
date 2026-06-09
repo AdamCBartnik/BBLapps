@@ -339,6 +339,7 @@ class MainWindow(QMainWindow):
 
         epics_row = QHBoxLayout()
         self._to_epics_chk = QCheckBox("To EPICS")
+        self._to_epics_chk.setChecked(True)
         epics_row.addWidget(self._to_epics_chk)
         epics_row.addStretch()
         lay.addLayout(epics_row)
@@ -467,7 +468,7 @@ class MainWindow(QMainWindow):
         self._scale_y_spin.editingFinished.connect(self._on_scale_changed)
         grid.addWidget(self._scale_y_spin, 1, 3)
         self._units_pixels_chk = QCheckBox("Units = pixels")
-        self._units_pixels_chk.setChecked(True)
+        self._units_pixels_chk.setChecked(False)
         self._units_pixels_chk.toggled.connect(self._on_scale_changed)
         grid.addWidget(self._units_pixels_chk, 1, 4)
 
@@ -561,7 +562,7 @@ class MainWindow(QMainWindow):
         grid.setHorizontalSpacing(4)
         grid.setVerticalSpacing(3)
 
-        _LBL_W = 62   # "Horizontal:" / "Vertical:" column
+        _LBL_W = 72   # "Horizontal:" / "Vertical:" column
         _SP_W  = 58   # spinbox column width
 
         lbl_h = QLabel("Horizontal:")
@@ -1247,7 +1248,7 @@ class MainWindow(QMainWindow):
     def _caput_nonan(self, name: str, value: float) -> None:
         if _epics is None or np.isnan(value):
             return
-        _epics.caput(self._epics_pv(name), value)
+        _epics.caput(self._epics_pv(name), value, wait=False)
 
     def _update_analysis(self, img: np.ndarray, xx: np.ndarray, yy: np.ndarray):
         d = img.astype(np.float64)
