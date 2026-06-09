@@ -99,6 +99,7 @@ class MainWindow(QMainWindow):
         self._last_analysis_xx:  np.ndarray | None = None
         self._last_analysis_yy:  np.ndarray | None = None
         self._zoom_start = None
+        self._first_frame = True
 
         self._build_ui()
         self._refresh_camera_settings()
@@ -527,7 +528,7 @@ class MainWindow(QMainWindow):
         # Row 4: Frame type
         grid.addWidget(QLabel("Frame type:"), 4, 0, Qt.AlignRight)
         self._frame_type_combo = QComboBox()
-        self._frame_type_combo.addItems(["Normal", "Hot", "Diff"])
+        self._frame_type_combo.addItems(["Normal", "Hot", "Cold", "Diff"])
         self._frame_type_combo.currentTextChanged.connect(self._on_frame_type_changed)
         grid.addWidget(self._frame_type_combo, 4, 1, 1, 4)
 
@@ -934,6 +935,7 @@ class MainWindow(QMainWindow):
         # Reset display state
         self._last_roi_display = None
         self._last_analysis_img = None
+        self._first_frame = True
         self._refresh_camera_settings()
         self._refresh_roi_boxes()
         self._set_window_title()
@@ -1306,6 +1308,13 @@ class MainWindow(QMainWindow):
         self._image_item.setImage(display_img[::-1].T, autoLevels=False)
         self._image_item.setLevels((self._display_min, self._display_max))
         self._image_item.setRect(*rect)
+
+        if self._first_frame:
+            self._first_frame = False
+            self._plot.setRange(
+                xRange=(rect[0], rect[0] + rect[2]),
+                yRange=(rect[1], rect[1] + rect[3]),
+                padding=0.02)
 
         # Cache for re-use when the user pans/zooms without a new frame
         self._last_analysis_img = img
