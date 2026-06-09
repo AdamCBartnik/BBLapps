@@ -74,7 +74,7 @@ def _write_scale(cal_prefix: str, x: float, y: float) -> None:
     epics.caput(f"{cal_prefix}_y_cal", y)
 
 
-def _make_camera(camera_id: str) -> tuple[str, CameraBase, str, bool]:
+def _make_camera(camera_id: str, gentl_paths: list | None = None) -> tuple[str, CameraBase, str, bool]:
     """
     Parse a camera ID string and return
     (display_name, camera_object, cal_prefix, has_epics_cal).
@@ -103,10 +103,11 @@ def _make_camera(camera_id: str) -> tuple[str, CameraBase, str, bool]:
         return "Mock", cam, "", False
 
     if re.match(r"^\d+\.\d+\.\d+\.\d+$", camera_id):
-        raise NotImplementedError(
-            f"Direct IP camera ({camera_id}) not yet implemented. "
-            "Add a GigE backend when the SDK is available."
-        )
+        from .cameras.gige import GigECamera
+        paths = gentl_paths or []
+        cam = GigECamera(camera_id, paths)
+        cal_prefix = camera_id.replace(".", "_")
+        return camera_id, cam, cal_prefix, False
 
     raise ValueError(f"Unrecognised camera ID format: '{camera_id!r}'")
 
@@ -132,6 +133,7 @@ def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry], str]:
 
     lab_name = cfg.get("name", yaml_path.stem)
     epics_prefix = cfg.get("epics_prefix", "")
+    gentl_paths = cfg.get("gentl_paths", [])
     camera_ids = [c["id"] for c in cfg.get("cameras", [])]
 
     if not camera_ids:
@@ -142,7 +144,7 @@ def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry], str]:
 
     for cid in camera_ids:
         try:
-            display, cam, cal_prefix, has_cal = _make_camera(cid)
+            display, cam, cal_prefix, has_cal = _make_camera(cid, gentl_paths)
             entries.append(CameraEntry(
                 display_name=display,
                 camera=cam,
