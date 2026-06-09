@@ -524,6 +524,13 @@ class MainWindow(QMainWindow):
             self._epics_prefix_combo.setCurrentText(self._epics_prefix)
         grid.addWidget(self._epics_prefix_combo, 3, 1, 1, 4)
 
+        # Row 4: Frame type
+        grid.addWidget(QLabel("Frame type:"), 4, 0, Qt.AlignRight)
+        self._frame_type_combo = QComboBox()
+        self._frame_type_combo.addItems(["Normal", "Hot", "Diff"])
+        self._frame_type_combo.currentTextChanged.connect(self._on_frame_type_changed)
+        grid.addWidget(self._frame_type_combo, 4, 1, 1, 4)
+
         lay.addLayout(grid)
 
     def _build_data_processing_group(self, parent):
@@ -962,6 +969,15 @@ class MainWindow(QMainWindow):
             self.camera.gain = self._gain_spin.value()
         except Exception as e:
             print(f"[gain] {e}")
+
+    def _on_frame_type_changed(self, text: str):
+        if _epics is None:
+            return
+        from .cameras.epics_areadetector import EPICSAreaDetectorCamera
+        if not isinstance(self.camera, EPICSAreaDetectorCamera):
+            return
+        cyclepump = 0 if text.lower() == "normal" else 1
+        _epics.caput(f"{self.camera._prefix}:cam1:cyclepump", cyclepump, wait=False)
 
     def _on_make_new_figure(self):
         """Open a frozen SnapshotWindow with the current frame."""
