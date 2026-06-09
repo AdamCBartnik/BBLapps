@@ -4,7 +4,7 @@ SnapshotWindow — a frozen copy of the current beamview frame.
 Created by "Make New Figure".  Each window holds:
   - a full image + colorbar + axes (pan/zoom enabled, hover tooltip)
   - a Save button that writes  ssss_NNN.png  and  ssss_NNN.h5  to today's
-    data directory (\\samba\bbl_online\beamdata\YYYY\MM\YYYY-MM-DD\).
+    data directory (\\\\samba\\bbl_online\\beamdata\\YYYY\\MM\\YYYY-MM-DD\\).
 
 The .h5 file stores the raw pixel array and all display metadata so the image
 can be fully reconstructed or reprocessed later.
