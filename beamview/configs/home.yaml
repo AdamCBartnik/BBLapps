@@ -1,0 +1,5 @@
+name: Home
+
+cameras:
+  - id: "VPCAM:03"
+  - id: "MOCK"

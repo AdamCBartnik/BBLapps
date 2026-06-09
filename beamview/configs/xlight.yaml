@@ -1,0 +1,4 @@
+name: xLight
+
+cameras:
+  - id: "EPICS:VPCAM:01:GB"

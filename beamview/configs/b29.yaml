@@ -1,0 +1,6 @@
+name: B29
+
+cameras:
+  - id: "EPICS:EMPAD"
+  - id: "192.168.128.2"
+  - id: "192.168.128.3"
