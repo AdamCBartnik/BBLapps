@@ -1,11 +1,8 @@
 name: B29
 epics_prefix: "B29"
 
-# GenTL producer paths for GigE Vision cameras (Allied Vision / FLIR / etc.)
-# Update these to match the installed SDK location on this machine.
 gentl_paths:
-  - "/opt/Vimba_6_0/VimbaGigETL/lib/x86_64bit/libVimbaGigETL.so"
-  - "/opt/spinnaker/lib/libSpinnaker_GenTL.so"
+  - "/nfs/acc/temp/bblopr/cameras/VimbaX_2026-1/cti/VimbaGigETL.cti"
 
 cameras:
   - id: "EPICS:EMPAD"
