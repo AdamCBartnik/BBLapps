@@ -1,4 +1,5 @@
 name: B29
+epics_prefix: "B29"
 
 cameras:
   - id: "EPICS:EMPAD"

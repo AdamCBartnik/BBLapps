@@ -14,7 +14,18 @@ from PyQt5.QtGui import QFont
 
 from .cameras.base import CameraBase
 
+try:
+    import epics as _epics
+except ImportError:
+    _epics = None
+
 COLORMAPS = ["grey", "viridis", "plasma", "inferno", "magma", "hot", "cool", "jet", "turbo"]
+
+EPICS_PREFIXES = [
+    "", "B24", "B29", "PPGUN", "PER", "CMM", "CMM2", "Sample",
+    "MEDUSA0", "MEDUSA1", "MEDUSA2", "MEDUSA3", "MEDUSA4",
+    "MEDUSA5", "MEDUSA6", "MEDUSA7", "MEDUSA8", "MEDUSA9",
+]
 
 
 class FrameWorker(QObject):
@@ -45,7 +56,7 @@ class FrameWorker(QObject):
 
 class MainWindow(QMainWindow):
     def __init__(self, camera: CameraBase, lab_name: str = "Beamview",
-                 entries=None):
+                 entries=None, epics_prefix: str = ""):
         """
         Parameters
         ----------
@@ -56,9 +67,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._entries = entries or []   # CameraEntry list; empty = single-camera mode
         self._lab_name = lab_name
+        self._epics_prefix = epics_prefix
         self.camera = camera
         self._set_window_title()
-        self.resize(1150, 750)
+        self.resize(1150, 900)
 
         # Worker thread for blocking camera captures
         self._worker_thread = QThread(self)
@@ -325,6 +337,12 @@ class MainWindow(QMainWindow):
 
         lay.addLayout(grid)
 
+        epics_row = QHBoxLayout()
+        self._to_epics_chk = QCheckBox("To EPICS")
+        epics_row.addWidget(self._to_epics_chk)
+        epics_row.addStretch()
+        lay.addLayout(epics_row)
+
     def _build_longterm_group(self):
         lay = self._right_group("Long Term Analysis")
 
@@ -470,6 +488,14 @@ class MainWindow(QMainWindow):
         self._gain_spin.setFixedWidth(55)
         self._gain_spin.editingFinished.connect(self._on_gain_changed)
         grid.addWidget(self._gain_spin, 2, 3)
+
+        # Row 3: EPICS prefix
+        grid.addWidget(QLabel("EPICS prefix:"), 3, 0, Qt.AlignRight)
+        self._epics_prefix_combo = QComboBox()
+        self._epics_prefix_combo.addItems(EPICS_PREFIXES)
+        if self._epics_prefix in EPICS_PREFIXES:
+            self._epics_prefix_combo.setCurrentText(self._epics_prefix)
+        grid.addWidget(self._epics_prefix_combo, 3, 1, 1, 4)
 
         lay.addLayout(grid)
 
@@ -1214,6 +1240,15 @@ class MainWindow(QMainWindow):
         )
         self._update_analysis(ci, cx_arr, cy_arr)
 
+    def _epics_pv(self, name: str) -> str:
+        prefix = self._epics_prefix_combo.currentText()
+        return f"{prefix}:{name}" if prefix else name
+
+    def _caput_nonan(self, name: str, value: float) -> None:
+        if _epics is None or np.isnan(value):
+            return
+        _epics.caput(self._epics_pv(name), value)
+
     def _update_analysis(self, img: np.ndarray, xx: np.ndarray, yy: np.ndarray):
         d = img.astype(np.float64)
         total = d.sum()
@@ -1251,6 +1286,13 @@ class MainWindow(QMainWindow):
         self._lbl_sy.setText(f"{sy:.2f}")
         self._lbl_cxy.setText(f"{cxy:.4f}")
         self._lbl_tilt.setText(f"{tilt:.2f}")
+
+        if self._to_epics_chk.isChecked():
+            self._caput_nonan("centroid_x", cx)
+            self._caput_nonan("centroid_y", cy)
+            self._caput_nonan("rms_x", sx)
+            self._caput_nonan("rms_y", sy)
+            self._caput_nonan("total_intensity", total)
 
         # Long term buffer
         if self._longterm_chk.isChecked():

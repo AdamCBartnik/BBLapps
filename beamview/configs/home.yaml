@@ -1,4 +1,5 @@
 name: Home
+epics_prefix: ""
 
 cameras:
   - id: "VPCAM:03"

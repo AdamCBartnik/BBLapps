@@ -1,4 +1,5 @@
 name: "211"
+epics_prefix: "PPGUN"
 
 cameras:
   - id: "192.168.157.12"

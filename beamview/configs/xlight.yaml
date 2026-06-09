@@ -1,4 +1,5 @@
 name: xLight
+epics_prefix: "B24"
 
 cameras:
   - id: "EPICS:VPCAM:01:GB"

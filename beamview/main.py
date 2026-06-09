@@ -46,15 +46,12 @@ def main():
     if args.mock:
         from .cameras.mock import MockCamera
         cam = MockCamera()
-        entries = None
-        lab_name = "Mock"
-        window = MainWindow(cam, lab_name=lab_name, entries=None)
+        window = MainWindow(cam, lab_name="Mock", entries=None, epics_prefix="")
 
     elif args.vpcam:
         from .cameras.vpcam import VPCAMCamera
         cam = VPCAMCamera(args.vpcam)
-        lab_name = args.vpcam
-        window = MainWindow(cam, lab_name=lab_name, entries=None)
+        window = MainWindow(cam, lab_name=args.vpcam, entries=None, epics_prefix="")
 
     else:  # --config
         config_path = Path(args.config)
@@ -63,12 +60,13 @@ def main():
             config_path = Path(__file__).parent / args.config
         try:
             from .config_loader import load_config
-            lab_name, entries = load_config(config_path)
+            lab_name, entries, epics_prefix = load_config(config_path)
         except Exception as e:
             QMessageBox.critical(None, "Config error", str(e))
             sys.exit(1)
 
-        window = MainWindow(entries[0].camera, lab_name=lab_name, entries=entries)
+        window = MainWindow(entries[0].camera, lab_name=lab_name,
+                            entries=entries, epics_prefix=epics_prefix)
 
     window.show()
     sys.exit(app.exec_())

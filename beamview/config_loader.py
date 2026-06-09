@@ -111,7 +111,7 @@ def _make_camera(camera_id: str) -> tuple[str, CameraBase, str, bool]:
     raise ValueError(f"Unrecognised camera ID format: '{camera_id!r}'")
 
 
-def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry]]:
+def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry], str]:
     """
     Parse a beamview YAML config file.
 
@@ -121,6 +121,8 @@ def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry]]:
         Human-readable name for this configuration (used in window title).
     entries : list[CameraEntry]
         One entry per camera, in config-file order.
+    epics_prefix : str
+        Default EPICS prefix for this lab (e.g. "B29"), or "" if not set.
 
     Raises RuntimeError if any calibration PV is unreachable.
     """
@@ -129,6 +131,7 @@ def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry]]:
         cfg = yaml.safe_load(fh)
 
     lab_name = cfg.get("name", yaml_path.stem)
+    epics_prefix = cfg.get("epics_prefix", "")
     camera_ids = [c["id"] for c in cfg.get("cameras", [])]
 
     if not camera_ids:
@@ -161,4 +164,4 @@ def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry]]:
     if not entries:
         raise RuntimeError("No usable cameras found in config.")
 
-    return lab_name, entries
+    return lab_name, entries, epics_prefix
