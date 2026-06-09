@@ -562,6 +562,22 @@ class MainWindow(QMainWindow):
         row_sg.addWidget(self._sgauss_power_spin)
         lay.addLayout(row_sg)
 
+        row_rot = QHBoxLayout()
+        self._rotate_chk = QCheckBox("Rotate:")
+        self._rotate_chk.toggled.connect(self._trigger_redraw)
+        self._rotate_angle_spin = QDoubleSpinBox()
+        self._rotate_angle_spin.setRange(-180.0, 180.0)
+        self._rotate_angle_spin.setValue(0.0)
+        self._rotate_angle_spin.setSingleStep(0.5)
+        self._rotate_angle_spin.setDecimals(1)
+        self._rotate_angle_spin.setFixedWidth(65)
+        self._rotate_angle_spin.editingFinished.connect(self._trigger_redraw)
+        self._rotate_angle_spin.valueChanged.connect(self._trigger_redraw)
+        row_rot.addWidget(self._rotate_chk)
+        row_rot.addWidget(self._rotate_angle_spin)
+        row_rot.addWidget(QLabel("deg"))
+        lay.addLayout(row_rot)
+
         row3 = QHBoxLayout()
         self._frame_avg_chk = QCheckBox("Frame avg:")
         self._frame_avg_chk.toggled.connect(self._trigger_redraw)
@@ -1200,6 +1216,16 @@ class MainWindow(QMainWindow):
         if self._sgauss_chk.isChecked():
             img = self._apply_sgauss(img, self._sgauss_width_spin.value(),
                                      self._sgauss_power_spin.value())
+
+        # Rotation
+        if self._rotate_chk.isChecked():
+            angle = self._rotate_angle_spin.value()
+            if angle != 0.0:
+                from scipy.ndimage import rotate as _rotate
+                img = np.clip(
+                    _rotate(img.astype(np.float32), angle, reshape=False, order=1),
+                    0, np.iinfo(np.uint16).max
+                ).astype(np.uint16)
 
         # Frame averaging
         if self._frame_avg_chk.isChecked():
