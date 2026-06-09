@@ -35,9 +35,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 import re
+import sys
 
 import epics
 import yaml
+
+if sys.platform == "win32":
+    _DEFAULT_GENTL_PATHS = [
+        "C:/Program Files/Allied Vision/VimbaX_2026-1/cti/VimbaGigETL.cti",
+    ]
+else:
+    _DEFAULT_GENTL_PATHS = [
+        "/nfs/acc/temp/bblopr/cameras/VimbaX_2026-1/cti/VimbaGigETL.cti",
+    ]
 
 from .cameras.base import CameraBase
 
@@ -133,7 +143,7 @@ def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry], str]:
 
     lab_name = cfg.get("name", yaml_path.stem)
     epics_prefix = cfg.get("epics_prefix", "")
-    gentl_paths = cfg.get("gentl_paths", [])
+    gentl_paths = cfg.get("gentl_paths", _DEFAULT_GENTL_PATHS)
     camera_ids = [c["id"] for c in cfg.get("cameras", [])]
 
     if not camera_ids:

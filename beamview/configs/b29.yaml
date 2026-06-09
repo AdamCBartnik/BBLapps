@@ -1,9 +1,6 @@
 name: B29
 epics_prefix: "B29"
 
-gentl_paths:
-  - "/nfs/acc/temp/bblopr/cameras/VimbaX_2026-1/cti/VimbaGigETL.cti"
-
 cameras:
   - id: "EPICS:EMPAD"
   - id: "192.168.128.2"
