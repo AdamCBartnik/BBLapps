@@ -19,7 +19,11 @@ try:
 except ImportError:
     _epics = None
 
-COLORMAPS = ["grey", "viridis", "plasma", "inferno", "magma", "hot", "cool", "jet", "turbo"]
+try:
+    from utilities.get_colormap import get_colormap as _get_colormap
+    COLORMAPS = _get_colormap()
+except Exception:
+    COLORMAPS = ["Gray", "Viridis", "Plasma", "Inferno", "Magma", "Hot", "Jet"]
 
 EPICS_PREFIXES = [
     "", "B24", "B29", "PPGUN", "PER", "CMM", "CMM2", "Sample",
@@ -621,7 +625,7 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         self._colormap_combo = QComboBox()
         self._colormap_combo.addItems(COLORMAPS)
-        self._colormap_combo.setCurrentText("grey")
+        self._colormap_combo.setCurrentText("Gray")
         self._colormap_combo.currentTextChanged.connect(self._apply_colormap)
         self._colormap_combo.currentTextChanged.connect(self._trigger_redraw)
         self._colormap_flip = QCheckBox("Reverse")
@@ -658,8 +662,11 @@ class MainWindow(QMainWindow):
         if self._colormap_flip.isChecked():
             name += "_r"
         try:
-            cmap = pg.colormap.get(name, source="matplotlib")
-            lut = cmap.getLookupTable(nPts=256)
+            from utilities.get_colormap import get_colormap
+            rgb = get_colormap(name, m=256)        # (256, 3) float 0-1
+            lut = np.empty((256, 4), dtype=np.uint8)
+            lut[:, :3] = (rgb * 255).astype(np.uint8)
+            lut[:, 3] = 255
             self._current_lut = lut
             self._image_item.setLookupTable(lut)
             self._cbar_item.setLookupTable(lut)
