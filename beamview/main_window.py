@@ -341,6 +341,28 @@ class MainWindow(QMainWindow):
 
         lay.addLayout(grid)
 
+        nn_row = QHBoxLayout()
+        self._nn_chk = QCheckBox("NxN:")
+        self._nn_chk.toggled.connect(self._trigger_redraw)
+        self._nn_x_spin = QSpinBox()
+        self._nn_x_spin.setRange(1, 500)
+        self._nn_x_spin.setValue(5)
+        self._nn_x_spin.setFixedWidth(45)
+        self._nn_x_spin.editingFinished.connect(self._trigger_redraw)
+        self._nn_x_spin.valueChanged.connect(self._trigger_redraw)
+        self._nn_y_spin = QSpinBox()
+        self._nn_y_spin.setRange(1, 500)
+        self._nn_y_spin.setValue(5)
+        self._nn_y_spin.setFixedWidth(45)
+        self._nn_y_spin.editingFinished.connect(self._trigger_redraw)
+        self._nn_y_spin.valueChanged.connect(self._trigger_redraw)
+        nn_row.addWidget(self._nn_chk)
+        nn_row.addWidget(self._nn_x_spin)
+        nn_row.addWidget(QLabel("×"))
+        nn_row.addWidget(self._nn_y_spin)
+        nn_row.addStretch()
+        lay.addLayout(nn_row)
+
         epics_row = QHBoxLayout()
         self._to_epics_chk = QCheckBox("To EPICS")
         self._to_epics_chk.setChecked(True)
@@ -1330,7 +1352,7 @@ class MainWindow(QMainWindow):
 
     def _update_analysis(self, img: np.ndarray, xx: np.ndarray, yy: np.ndarray):
         d = img.astype(np.float64)
-        total = d.sum()
+        total_full = d.sum()
         peak = float(d.max())
         pct = 100.0 * peak / self.camera.max_value
 
@@ -1339,12 +1361,21 @@ class MainWindow(QMainWindow):
         self._lbl_maxpct.setStyleSheet(
             "background-color: red;" if pct > 95 else ""
         )
+
+        # NxN integrated intensity: max sum over all NxN sliding windows
+        if self._nn_chk.isChecked():
+            from scipy.signal import fftconvolve
+            nx, ny = self._nn_x_spin.value(), self._nn_y_spin.value()
+            total = float(fftconvolve(d, np.ones((nx, ny)), mode='same').max())
+        else:
+            total = total_full
+
         self._lbl_sum.setText(f"{total:.0f}")
 
-        if total == 0:
+        if total_full == 0:
             return
 
-        rho = d / total
+        rho = d / total_full  # centroid/sigma always use full-image normalization
 
         # xx has one entry per column; yy has one entry per row (row 0 = highest y)
         cx = (xx * rho.sum(axis=0)).sum()
