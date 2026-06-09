@@ -537,6 +537,26 @@ class MainWindow(QMainWindow):
         row2.addWidget(self._median_spin)
         lay.addLayout(row2)
 
+        row_sg = QHBoxLayout()
+        self._sgauss_chk = QCheckBox("S-Gauss:")
+        self._sgauss_chk.toggled.connect(self._trigger_redraw)
+        self._sgauss_width_spin = QSpinBox()
+        self._sgauss_width_spin.setRange(2, 200)
+        self._sgauss_width_spin.setValue(5)
+        self._sgauss_width_spin.setFixedWidth(45)
+        self._sgauss_width_spin.editingFinished.connect(self._trigger_redraw)
+        self._sgauss_power_spin = QDoubleSpinBox()
+        self._sgauss_power_spin.setRange(0.5, 10.0)
+        self._sgauss_power_spin.setValue(2.0)
+        self._sgauss_power_spin.setSingleStep(0.5)
+        self._sgauss_power_spin.setFixedWidth(45)
+        self._sgauss_power_spin.editingFinished.connect(self._trigger_redraw)
+        row_sg.addWidget(self._sgauss_chk)
+        row_sg.addWidget(self._sgauss_width_spin)
+        row_sg.addWidget(QLabel("p:"))
+        row_sg.addWidget(self._sgauss_power_spin)
+        lay.addLayout(row_sg)
+
         row3 = QHBoxLayout()
         self._frame_avg_chk = QCheckBox("Frame avg:")
         self._frame_avg_chk.toggled.connect(self._trigger_redraw)
@@ -1171,6 +1191,11 @@ class MainWindow(QMainWindow):
             from scipy.ndimage import median_filter
             img = median_filter(img, size=self._median_spin.value()).astype(np.uint16)
 
+        # Super-gaussian smoothing
+        if self._sgauss_chk.isChecked():
+            img = self._apply_sgauss(img, self._sgauss_width_spin.value(),
+                                     self._sgauss_power_spin.value())
+
         # Frame averaging
         if self._frame_avg_chk.isChecked():
             n = self._frame_avg_spin.value()
@@ -1247,6 +1272,21 @@ class MainWindow(QMainWindow):
             self._last_analysis_img, self._last_analysis_xx, self._last_analysis_yy
         )
         self._update_analysis(ci, cx_arr, cy_arr)
+
+    def _apply_sgauss(self, img: np.ndarray, mean_param: int, p: float) -> np.ndarray:
+        """Super-gaussian smoothing kernel, matching MATLAB source/make_plot.m."""
+        import math
+        from scipy.ndimage import convolve
+        sig = mean_param / 4.0
+        sig_super = sig * np.sqrt(2 * math.gamma(1 + 1/p) / math.gamma(1 + 2/p))
+        kw = int(np.ceil(mean_param * 1.3))
+        kw = 2 * int(np.ceil((kw - 1) / 2)) + 1   # next higher odd number
+        x = np.arange(-(kw - 1) / 2, (kw - 1) / 2 + 1)
+        X, Y = np.meshgrid(x, x)
+        kernel = np.exp(-((X**2 + Y**2) / (2 * sig_super**2))**p).astype(np.float32)
+        kernel /= kernel.sum()
+        out = convolve(img.astype(np.float32), kernel, mode='reflect')
+        return np.clip(out, 0, np.iinfo(np.uint16).max).astype(np.uint16)
 
     def _epics_pv(self, name: str) -> str:
         prefix = self._epics_prefix_combo.currentText()
