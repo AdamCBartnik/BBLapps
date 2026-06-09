@@ -1276,7 +1276,7 @@ class MainWindow(QMainWindow):
     def _apply_sgauss(self, img: np.ndarray, mean_param: int, p: float) -> np.ndarray:
         """Super-gaussian smoothing kernel, matching MATLAB source/make_plot.m."""
         import math
-        from scipy.ndimage import convolve
+        from scipy.signal import fftconvolve
         sig = mean_param / 4.0
         sig_super = sig * np.sqrt(2 * math.gamma(1 + 1/p) / math.gamma(1 + 2/p))
         kw = int(np.ceil(mean_param * 1.3))
@@ -1285,7 +1285,7 @@ class MainWindow(QMainWindow):
         X, Y = np.meshgrid(x, x)
         kernel = np.exp(-((X**2 + Y**2) / (2 * sig_super**2))**p).astype(np.float32)
         kernel /= kernel.sum()
-        out = convolve(img.astype(np.float32), kernel, mode='reflect')
+        out = fftconvolve(img.astype(np.float32), kernel, mode='same')
         return np.clip(out, 0, np.iinfo(np.uint16).max).astype(np.uint16)
 
     def _epics_pv(self, name: str) -> str:
