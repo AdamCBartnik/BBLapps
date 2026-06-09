@@ -1217,16 +1217,6 @@ class MainWindow(QMainWindow):
             img = self._apply_sgauss(img, self._sgauss_width_spin.value(),
                                      self._sgauss_power_spin.value())
 
-        # Rotation
-        if self._rotate_chk.isChecked():
-            angle = self._rotate_angle_spin.value()
-            if angle != 0.0:
-                from scipy.ndimage import rotate as _rotate
-                img = np.clip(
-                    _rotate(img.astype(np.float32), angle, reshape=False, order=1),
-                    0, np.iinfo(np.uint16).max
-                ).astype(np.uint16)
-
         # Frame averaging
         if self._frame_avg_chk.isChecked():
             n = self._frame_avg_spin.value()
@@ -1237,6 +1227,16 @@ class MainWindow(QMainWindow):
             self._frame_avg_count_lbl.setText(f"{len(self._frame_avg_buffer)} / {n}")
         else:
             self._frame_avg_count_lbl.setText("—")
+
+        # Rotation
+        if self._rotate_chk.isChecked():
+            angle = self._rotate_angle_spin.value()
+            if angle != 0.0:
+                from scipy.ndimage import rotate as _rotate
+                img = np.clip(
+                    _rotate(img.astype(np.float32), angle, reshape=False, order=1),
+                    0, np.iinfo(np.uint16).max
+                ).astype(np.uint16)
 
         # Threshold
         if self._threshold_chk.isChecked():
