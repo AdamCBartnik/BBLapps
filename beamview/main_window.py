@@ -83,7 +83,7 @@ class MainWindow(QMainWindow):
         self._worker.frame_ready.connect(self._on_frame_ready)
         self._worker_thread.start()
 
-        self._t_frame_request: float = 0.0
+        self._t_last_display: float | None = None
         self._timer = QTimer(self)
         self._timer.setInterval(100)
         self._timer.timeout.connect(self._on_timer_tick)
@@ -963,6 +963,7 @@ class MainWindow(QMainWindow):
         self._first_frame = True
         self._last_exposure_written_ms = None
         self._last_gain_written = None
+        self._t_last_display = None
         self._refresh_camera_settings()
         self._refresh_roi_boxes()
         self._set_window_title()
@@ -1252,13 +1253,10 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_timer_tick(self):
-        """Stamp the request time, then ask the worker for a frame."""
-        self._t_frame_request = time.perf_counter()
         self._worker.request_frame()
 
     def _update_frame(self):
         """Direct (synchronous) capture + display — used only when camera is off."""
-        self._t_frame_request = time.perf_counter()
         try:
             img = self.camera.snapshot()
         except Exception as e:
@@ -1271,8 +1269,6 @@ class MainWindow(QMainWindow):
         self._process_and_display(img)
 
     def _process_and_display(self, img: np.ndarray):
-        t0 = self._t_frame_request if self._t_frame_request else time.perf_counter()
-
         self._last_raw = img
 
         # Update exposure display from camera readback, but not while the user is editing it
@@ -1393,7 +1389,12 @@ class MainWindow(QMainWindow):
         ci, cx_arr, cy_arr = self._visible_crop(img, xx, yy)
         self._update_analysis(ci, cx_arr, cy_arr)
 
-        self._fps_lbl.setText(f"{time.perf_counter() - t0:.3f} s/frame")
+        # True inter-frame time (the old label showed single-fetch latency,
+        # which understates the period whenever fetches are gated/skipped)
+        now_t = time.perf_counter()
+        if self._t_last_display is not None:
+            self._fps_lbl.setText(f"{now_t - self._t_last_display:.3f} s/frame")
+        self._t_last_display = now_t
 
     def _visible_crop(self, img: np.ndarray, xx: np.ndarray, yy: np.ndarray):
         """Return (img_crop, xx_crop, yy_crop) restricted to the currently visible
