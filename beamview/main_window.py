@@ -627,7 +627,12 @@ class MainWindow(QMainWindow):
         row3.addWidget(self._frame_avg_reset_btn)
         lay.addLayout(row3)
 
+        # Circular buffer + running sum (O(1) per frame; see _process_and_display)
         self._frame_avg_buffer = []
+        self._frame_avg_index = 0
+        self._frame_avg_count = 0
+        self._frame_avg_n = 0
+        self._frame_avg_sum = None
 
     def _build_roi_group(self, parent):
         lay = self._bottom_group("Hardware Region of Interest (ROI)", parent)
@@ -756,7 +761,7 @@ class MainWindow(QMainWindow):
         self._sy_buf.clear()
 
     def _reset_frame_avg(self):
-        self._frame_avg_buffer.clear()
+        self._frame_avg_sum = None   # forces a full buffer reset on next frame
 
     # ------------------------------------------------------------------
     # Slots
@@ -1280,18 +1285,35 @@ class MainWindow(QMainWindow):
             img = self._apply_sgauss(img, self._sgauss_width_spin.value(),
                                      self._sgauss_power_spin.value())
 
-        # Frame averaging
+        # Frame averaging — circular buffer + running sum, O(1) per frame
+        # (ported from MATLAB make_plot.m, but keeping a raw float64 sum and
+        # dividing at display time instead of rescaling the mean each step:
+        # float32 frame values are exact in float64, so subtracting an evicted
+        # frame leaves the sum exactly equal to the sum of the buffer contents
+        # — no round-off accumulates).  The buffer resets when N changes, the
+        # frame shape changes (ROI), or the Reset button clears the sum.
         if self._frame_avg_chk.isChecked():
             n = self._frame_avg_spin.value()
-            # ROI changes alter the frame shape — averaging across shapes is
-            # meaningless (and np.mean would raise), so restart the buffer
-            if self._frame_avg_buffer and self._frame_avg_buffer[0].shape != img.shape:
-                self._frame_avg_buffer.clear()
-            self._frame_avg_buffer.append(img.astype(np.float32))
-            if len(self._frame_avg_buffer) > n:
-                self._frame_avg_buffer.pop(0)
-            img = np.mean(self._frame_avg_buffer, axis=0).astype(np.uint16)
-            self._frame_avg_count_lbl.setText(f"{len(self._frame_avg_buffer)} / {n}")
+            new = img.astype(np.float32)
+            if (self._frame_avg_sum is None
+                    or self._frame_avg_n != n
+                    or self._frame_avg_sum.shape != new.shape):
+                self._frame_avg_buffer = [None] * n
+                self._frame_avg_index = 0
+                self._frame_avg_count = 0
+                self._frame_avg_n = n
+                self._frame_avg_sum = np.zeros(new.shape, dtype=np.float64)
+            i = self._frame_avg_index
+            evicted = self._frame_avg_buffer[i]
+            if evicted is not None:
+                self._frame_avg_sum -= evicted
+            else:
+                self._frame_avg_count += 1
+            self._frame_avg_buffer[i] = new
+            self._frame_avg_sum += new
+            self._frame_avg_index = (i + 1) % n
+            img = (self._frame_avg_sum / self._frame_avg_count).astype(np.uint16)
+            self._frame_avg_count_lbl.setText(f"{self._frame_avg_count} / {n}")
         else:
             self._frame_avg_count_lbl.setText("—")
 
