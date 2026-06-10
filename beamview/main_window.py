@@ -869,10 +869,25 @@ class MainWindow(QMainWindow):
         wmax = self.camera.width_max
         hmax = self.camera.height_max
 
-        x0 = max(0, int(min(d1.x(), d2.x())))
-        x1 = min(wmax - 1, int(max(d1.x(), d2.x())))
-        y0 = max(0, int(min(d1.y(), d2.y())))
-        y1 = min(hmax - 1, int(max(d1.y(), d2.y())))
+        # View coords are display units: sensor pixels when "Units = pixels",
+        # otherwise physical units (see _get_display_xy: (px - 0.5*max)*scale).
+        # The ROI spinboxes need display-pixel coords — invert the scaling.
+        x1v, x2v = d1.x(), d2.x()
+        y1v, y2v = d1.y(), d2.y()
+        if not self._units_pixels_chk.isChecked():
+            sx = self._scale_x_spin.value()
+            sy = self._scale_y_spin.value()
+            if sx <= 0 or sy <= 0:
+                return
+            x1v = x1v / sx + 0.5 * wmax
+            x2v = x2v / sx + 0.5 * wmax
+            y1v = y1v / sy + 0.5 * hmax
+            y2v = y2v / sy + 0.5 * hmax
+
+        x0 = max(0, int(min(x1v, x2v)))
+        x1 = min(wmax - 1, int(max(x1v, x2v)))
+        y0 = max(0, int(min(y1v, y2v)))
+        y1 = min(hmax - 1, int(max(y1v, y2v)))
 
         if x1 <= x0 or y1 <= y0:
             return  # too small / off-image
@@ -1095,7 +1110,15 @@ class MainWindow(QMainWindow):
         finally:
             if was_running:
                 self._timer.start()
-        self._trigger_redraw()
+        if not was_running:
+            # Camera is off: the last frame's data doesn't match the new ROI
+            # dimensions and would display as an odd crop — show zeros at the
+            # new size instead until the next real frame arrives.
+            try:
+                _, _, rw, rh = self.camera.get_roi()
+            except Exception:
+                rw, rh = w, h
+            self._process_and_display(np.zeros((rh, rw), dtype=np.uint16))
 
     def _refresh_roi_boxes(self):
         """Read current ROI from camera, convert to display coords, update spinboxes,
@@ -1260,6 +1283,10 @@ class MainWindow(QMainWindow):
         # Frame averaging
         if self._frame_avg_chk.isChecked():
             n = self._frame_avg_spin.value()
+            # ROI changes alter the frame shape — averaging across shapes is
+            # meaningless (and np.mean would raise), so restart the buffer
+            if self._frame_avg_buffer and self._frame_avg_buffer[0].shape != img.shape:
+                self._frame_avg_buffer.clear()
             self._frame_avg_buffer.append(img.astype(np.float32))
             if len(self._frame_avg_buffer) > n:
                 self._frame_avg_buffer.pop(0)
