@@ -2,5 +2,7 @@ name: Home
 epics_prefix: ""
 
 cameras:
-  - id: "VPCAM:03"
+  - id: "VPCAM:03"     # the Pi IOC directly
+  - id: "VPCAMGW:03"   # same camera through the CA-relay gateway
+                       # (run vpcam_launcher.py with config_relay_home.yaml)
   - id: "MOCK"
