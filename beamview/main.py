@@ -6,8 +6,8 @@ Usage
     # With a config file (multi-camera, lab-specific):
     python -m beamview --config configs/b29.yaml
 
-    # Quick single-camera launch (legacy / home use):
-    python -m beamview --vpcam VPCAM:03:GB
+    # Quick single-camera launch (home use):
+    python -m beamview --epics VPCAM:03
     python -m beamview --mock
 """
 
@@ -26,8 +26,9 @@ def _parse_args():
         help="YAML config file listing cameras for this lab (e.g. configs/b29.yaml)",
     )
     group.add_argument(
-        "--vpcam", metavar="PREFIX",
-        help="Launch directly with a single VPCAM camera (e.g. VPCAM:03:GB)",
+        "--epics", "--vpcam", dest="epics", metavar="PREFIX",
+        help="Launch directly with a single standard-areaDetector IOC "
+             "(e.g. VPCAM:03)",
     )
     group.add_argument(
         "--mock", action="store_true",
@@ -48,10 +49,11 @@ def main():
         cam = MockCamera()
         window = MainWindow(cam, lab_name="Mock", entries=None, epics_prefix="")
 
-    elif args.vpcam:
-        from .cameras.vpcam import VPCAMCamera
-        cam = VPCAMCamera(args.vpcam)
-        window = MainWindow(cam, lab_name=args.vpcam, entries=None, epics_prefix="")
+    elif args.epics:
+        from .cameras.epics_areadetector import EPICSAreaDetectorCamera
+        prefix = args.epics.rstrip(":")
+        cam = EPICSAreaDetectorCamera(prefix)
+        window = MainWindow(cam, lab_name=prefix, entries=None, epics_prefix="")
 
     else:  # --config
         config_path = Path(args.config)

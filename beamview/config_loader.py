@@ -4,50 +4,42 @@ config_loader.py
 Loads a beamview YAML config file and returns a list of CameraEntry objects,
 one per camera, in the order they appear in the file.
 
-Camera ID format (mirrors the MATLAB beamview_<lab>.m convention):
+Beamview connects ONLY to standard areaDetector IOCs (real areaDetector or
+the VPCam contract IOCs — Pi cameras, GigE-camera IOCs, CA-relay gateways).
+Direct camera connections (old VPCAM private PVs, direct GigE via Harvester)
+were removed in the standard-areaDetector migration; run the matching IOC
+from the vpcam repo instead.
+
+Camera ID format:
 
     "EPICS:<prefix>"   → EPICSAreaDetectorCamera("<prefix>")
                          display name: "<prefix>"  (EPICS: stripped)
-    "VPCAM:<name>"     → VPCAMCamera("VPCAM:<name>")
-                         display name: "VPCAM:<name>"
-    "192.168.x.x"      → (future GigE — placeholder, raises NotImplementedError)
+    "VPCAM:<name>"     → shorthand for EPICS:VPCAM:<name> (same backend)
+    "MOCK"             → built-in mock camera (no hardware)
 
 Scale calibration PVs:
-    Read/written as  <cal_prefix>_x_cal  and  <cal_prefix>_y_cal
-    where cal_prefix = prefix with trailing colon stripped.
-
-    For EPICS cameras:  cal_prefix = the EPICS prefix (e.g. "CMM:Screen1")
-    For VPCAM cameras:  cal_prefix = the VPCAM prefix (e.g. "VPCAM:01:GB")
+    Read/written as  <prefix>:cam1:CalibX  and  <prefix>:cam1:CalibY
+    in micrometers per pixel (VPCam extension records; absent on plain
+    areaDetector IOCs, in which case the entry is created without EPICS
+    calibration and the scale boxes are local-only).
 
 Example YAML
 ------------
 name: B29
-epics_prefix: "B29:"
+epics_prefix: "B29"
 
 cameras:
   - id: "EPICS:EMPAD"
-  - id: "192.168.128.2"
-  - id: "VPCAM:01:GB"
+  - id: "EPICS:VPCAM:01"
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 import re
-import sys
 
 import epics
 import yaml
-
-if sys.platform == "win32":
-    _DEFAULT_GENTL_PATHS = [
-        "C:/Program Files/Allied Vision/VimbaX_2026-1/cti/VimbaGigETL.cti",
-    ]
-else:
-    _DEFAULT_GENTL_PATHS = [
-        "/nfs/acc/temp/bblopr/cameras/VimbaX_2026-1/cti/VimbaGigETL.cti",
-    ]
 
 from .cameras.base import CameraBase
 
@@ -56,7 +48,7 @@ from .cameras.base import CameraBase
 class CameraEntry:
     display_name: str          # shown in the dropdown
     camera: CameraBase         # live camera object
-    cal_prefix: str            # prefix used for _x_cal / _y_cal PVs
+    cal_prefix: str            # prefix used for cam1:CalibX/Y PVs
     has_epics_cal: bool = True # False for mock/non-EPICS cameras
 
 
@@ -65,13 +57,15 @@ def _strip_trailing_colon(s: str) -> str:
 
 
 def _load_scale(cal_prefix: str) -> tuple[float, float]:
-    """Read _x_cal and _y_cal from EPICS.  Raises RuntimeError if unavailable."""
-    px = epics.caget(f"{cal_prefix}_x_cal", timeout=3.0)
-    py = epics.caget(f"{cal_prefix}_y_cal", timeout=3.0)
+    """Read cam1:CalibX/Y (um/pixel). Raises RuntimeError if unavailable."""
+    px = epics.caget(f"{cal_prefix}:cam1:CalibX", timeout=3.0)
+    py = epics.caget(f"{cal_prefix}:cam1:CalibY", timeout=3.0)
     if px is None or py is None:
         missing = []
-        if px is None: missing.append(f"{cal_prefix}_x_cal")
-        if py is None: missing.append(f"{cal_prefix}_y_cal")
+        if px is None:
+            missing.append(f"{cal_prefix}:cam1:CalibX")
+        if py is None:
+            missing.append(f"{cal_prefix}:cam1:CalibY")
         raise RuntimeError(
             f"Could not read calibration PV(s): {', '.join(missing)}"
         )
@@ -79,47 +73,40 @@ def _load_scale(cal_prefix: str) -> tuple[float, float]:
 
 
 def _write_scale(cal_prefix: str, x: float, y: float) -> None:
-    """Write _x_cal and _y_cal back to EPICS."""
-    epics.caput(f"{cal_prefix}_x_cal", x)
-    epics.caput(f"{cal_prefix}_y_cal", y)
+    """Write cam1:CalibX/Y (um/pixel) back to EPICS."""
+    epics.caput(f"{cal_prefix}:cam1:CalibX", x)
+    epics.caput(f"{cal_prefix}:cam1:CalibY", y)
 
 
-def _make_camera(camera_id: str, gentl_paths: list | None = None) -> tuple[str, CameraBase, str, bool]:
+def _make_camera(camera_id: str) -> tuple[str, CameraBase, str, bool]:
     """
     Parse a camera ID string and return
     (display_name, camera_object, cal_prefix, has_epics_cal).
     """
     if camera_id.upper().startswith("EPICS:"):
-        from .cameras.epics_areadetector import EPICSAreaDetectorCamera
         prefix = camera_id[len("EPICS:"):]
-        display = prefix
-        cal_prefix = _strip_trailing_colon(prefix)
-        cam = EPICSAreaDetectorCamera(prefix)
-        return display, cam, cal_prefix, True
-
-    if re.match(r"^VPCAM:", camera_id, re.IGNORECASE):
-        from .cameras.vpcam import VPCAMCamera
+    elif re.match(r"^VPCAM:", camera_id, re.IGNORECASE):
+        # Shorthand: VPCam IOCs serve the standard contract directly
         prefix = camera_id
-        display = prefix
-        cal_prefix = _strip_trailing_colon(prefix)
-        cam = VPCAMCamera(prefix)
-        # Direct VPCAM IOCs don't have _x_cal/_y_cal — those only exist on
-        # the gateway IOC (accessed as EPICS:VPCAM:xx:GB in the config)
-        return display, cam, cal_prefix, False
-
-    if re.match(r"^MOCK$", camera_id, re.IGNORECASE):
+    elif re.match(r"^MOCK$", camera_id, re.IGNORECASE):
         from .cameras.mock import MockCamera
-        cam = MockCamera()
-        return "Mock", cam, "", False
+        return "Mock", MockCamera(), "", False
+    elif re.match(r"^\d+\.\d+\.\d+\.\d+$", camera_id):
+        raise ValueError(
+            f"Direct GigE connections were removed ({camera_id}). Run a "
+            "'gige' type IOC from the vpcam repo on the camera subnet and "
+            "reference it here as EPICS:<its-prefix>."
+        )
+    else:
+        raise ValueError(f"Unrecognised camera ID format: '{camera_id!r}'")
 
-    if re.match(r"^\d+\.\d+\.\d+\.\d+$", camera_id):
-        from .cameras.gige import GigECamera
-        paths = gentl_paths or []
-        cam = GigECamera(camera_id, paths)
-        cal_prefix = camera_id.replace(".", "_")
-        return camera_id, cam, cal_prefix, False
-
-    raise ValueError(f"Unrecognised camera ID format: '{camera_id!r}'")
+    from .cameras.epics_areadetector import EPICSAreaDetectorCamera
+    prefix = _strip_trailing_colon(prefix)
+    cam = EPICSAreaDetectorCamera(prefix)
+    # CalibX/Y are VPCam extension records; a plain areaDetector IOC won't
+    # have them. Probe once so such cameras degrade to local-only scale.
+    has_cal = epics.caget(f"{prefix}:cam1:CalibX", timeout=2.0) is not None
+    return prefix, cam, prefix, has_cal
 
 
 def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry], str]:
@@ -134,8 +121,6 @@ def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry], str]:
         One entry per camera, in config-file order.
     epics_prefix : str
         Default EPICS prefix for this lab (e.g. "B29"), or "" if not set.
-
-    Raises RuntimeError if any calibration PV is unreachable.
     """
     yaml_path = Path(yaml_path)
     with open(yaml_path) as fh:
@@ -143,7 +128,6 @@ def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry], str]:
 
     lab_name = cfg.get("name", yaml_path.stem)
     epics_prefix = cfg.get("epics_prefix", "")
-    gentl_paths = cfg.get("gentl_paths", _DEFAULT_GENTL_PATHS)
     camera_ids = [c["id"] for c in cfg.get("cameras", [])]
 
     if not camera_ids:
@@ -154,16 +138,13 @@ def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry], str]:
 
     for cid in camera_ids:
         try:
-            display, cam, cal_prefix, has_cal = _make_camera(cid, gentl_paths)
+            display, cam, cal_prefix, has_cal = _make_camera(cid)
             entries.append(CameraEntry(
                 display_name=display,
                 camera=cam,
                 cal_prefix=cal_prefix,
                 has_epics_cal=has_cal,
             ))
-        except NotImplementedError as e:
-            # Skip unimplemented types with a warning rather than aborting
-            print(f"[config] Skipping {cid}: {e}")
         except Exception as e:
             errors.append(f"{cid}: {e}")
 

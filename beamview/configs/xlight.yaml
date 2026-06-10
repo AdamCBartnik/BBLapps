@@ -2,4 +2,7 @@ name: xLight
 epics_prefix: "B24"
 
 cameras:
-  - id: "EPICS:VPCAM:01:GB"
+  # Direct to the VPCam Pi IOC (standard areaDetector contract).
+  # If a CA-relay gateway is deployed for this camera, point at its
+  # prefix instead, e.g. "EPICS:VPCAMGW:01".
+  - id: "EPICS:VPCAM:01"

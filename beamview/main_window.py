@@ -45,7 +45,7 @@ class FrameWorker(QObject):
         if self._busy:
             return
         # Skip the caget entirely if the camera signals no new frame is ready
-        # (VPCAMCamera monitors frame_timestamp via CA; other cameras always return True)
+        # (EPICS cameras monitor image1:ArrayCounter_RBV via CA; others always return True)
         if not self._camera.has_new_frame():
             return
         self._busy = True
