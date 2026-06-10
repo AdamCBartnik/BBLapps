@@ -10,11 +10,10 @@ Direct camera connections (old VPCAM private PVs, direct GigE via Harvester)
 were removed in the standard-areaDetector migration; run the matching IOC
 from the vpcam repo instead.
 
-Camera ID format:
+Camera ID format — every id is simply the IOC's PV prefix:
 
-    "EPICS:<prefix>"   → EPICSAreaDetectorCamera("<prefix>")
-                         display name: "<prefix>"  (EPICS: stripped)
-    "VPCAM:<name>"     → shorthand for EPICS:VPCAM:<name> (same backend)
+    "<prefix>"         → EPICSAreaDetectorCamera("<prefix>")
+                         e.g. "EMPAD", "VPCAM:03", "VPCAMGW:02"
     "MOCK"             → built-in mock camera (no hardware)
 
 Scale calibration PVs:
@@ -29,8 +28,8 @@ name: B29
 epics_prefix: "B29"
 
 cameras:
-  - id: "EPICS:EMPAD"
-  - id: "EPICS:VPCAM:01"
+  - id: "EMPAD"
+  - id: "VPCAM:01"
 """
 
 from __future__ import annotations
@@ -83,22 +82,19 @@ def _make_camera(camera_id: str) -> tuple[str, CameraBase, str, bool]:
     Parse a camera ID string and return
     (display_name, camera_object, cal_prefix, has_epics_cal).
     """
-    if camera_id.upper().startswith("EPICS:"):
-        prefix = camera_id[len("EPICS:"):]
-    elif re.match(r"^VPCAM:", camera_id, re.IGNORECASE):
-        # Shorthand: VPCam IOCs serve the standard contract directly
-        prefix = camera_id
-    elif re.match(r"^MOCK$", camera_id, re.IGNORECASE):
+    if re.match(r"^MOCK$", camera_id, re.IGNORECASE):
         from .cameras.mock import MockCamera
         return "Mock", MockCamera(), "", False
-    elif re.match(r"^\d+\.\d+\.\d+\.\d+$", camera_id):
+
+    if re.match(r"^\d+\.\d+\.\d+\.\d+$", camera_id):
         raise ValueError(
             f"Direct GigE connections were removed ({camera_id}). Run a "
             "'gige' type IOC from the vpcam repo on the camera subnet and "
-            "reference it here as EPICS:<its-prefix>."
+            "use its PV prefix here."
         )
-    else:
-        raise ValueError(f"Unrecognised camera ID format: '{camera_id!r}'")
+
+    # Everything else is a standard-areaDetector IOC prefix
+    prefix = camera_id
 
     from .cameras.epics_areadetector import EPICSAreaDetectorCamera
     prefix = _strip_trailing_colon(prefix)

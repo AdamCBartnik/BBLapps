@@ -2,9 +2,9 @@ name: B29
 epics_prefix: "B29"
 
 cameras:
-  - id: "EPICS:EMPAD"
+  - id: "EMPAD"
   # The two GigE cameras (192.168.128.2 / .3) are no longer connected
   # directly — run 'gige' type IOCs from the vpcam repo on the camera-subnet
   # PC and add their prefixes here, e.g.:
-  # - id: "EPICS:B29CAM1"
-  # - id: "EPICS:B29CAM2"
+  # - id: "B29CAM1"
+  # - id: "B29CAM2"

@@ -5,5 +5,5 @@ cameras:
   # The GigE camera (192.168.157.12) is no longer connected directly — run a
   # 'gige' type IOC from the vpcam repo on the camera-subnet machine and add
   # its prefix here, e.g.:
-  # - id: "EPICS:PPGUNCAM"
+  # - id: "PPGUNCAM"
   - id: "MOCK"   # placeholder so this config loads until the IOC is deployed
