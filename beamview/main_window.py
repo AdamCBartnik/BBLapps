@@ -100,6 +100,11 @@ class MainWindow(QMainWindow):
         self._last_analysis_yy:  np.ndarray | None = None
         self._zoom_start = None
         self._first_frame = True
+        # Last exposure/gain values written to (or read back from) the
+        # camera, used to suppress no-op writes from editingFinished firing
+        # on mere focus changes
+        self._last_exposure_written_ms = None
+        self._last_gain_written = None
 
         self._build_ui()
         self._refresh_camera_settings()
@@ -956,6 +961,8 @@ class MainWindow(QMainWindow):
         self._last_roi_display = None
         self._last_analysis_img = None
         self._first_frame = True
+        self._last_exposure_written_ms = None
+        self._last_gain_written = None
         self._refresh_camera_settings()
         self._refresh_roi_boxes()
         self._set_window_title()
@@ -980,15 +987,25 @@ class MainWindow(QMainWindow):
             self._update_frame()
 
     def _on_exposure_changed(self):
+        # Qt fires editingFinished on focus loss even without an edit, and the
+        # exposure setter also writes AcquirePeriod — guard against no-op
+        # writes so stray focus changes don't touch the camera.
         ms = self._exposure_spin.value()
+        if ms == self._last_exposure_written_ms:
+            return
         try:
             self.camera.exposure_time = ms * 1e-3
+            self._last_exposure_written_ms = ms
         except Exception as e:
             print(f"[exposure] {e}")
 
     def _on_gain_changed(self):
+        val = self._gain_spin.value()
+        if val == self._last_gain_written:
+            return
         try:
-            self.camera.gain = self._gain_spin.value()
+            self.camera.gain = val
+            self._last_gain_written = val
         except Exception as e:
             print(f"[gain] {e}")
 
@@ -1264,6 +1281,9 @@ class MainWindow(QMainWindow):
                 self._exposure_spin.blockSignals(True)
                 self._exposure_spin.setValue(self.camera.exposure_time * 1e3)
                 self._exposure_spin.blockSignals(False)
+                # The box now shows the camera's own value — a focus-out at
+                # this value must not trigger a write
+                self._last_exposure_written_ms = self._exposure_spin.value()
             except Exception:
                 pass
 
