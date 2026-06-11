@@ -1,0 +1,40 @@
+# /etc/vpcam/config.yaml
+# VPCam Scintillator Camera System - Device Configuration
+
+device:
+  hostname: vpcam-01        # Set this per deployment
+  instance_id: "01"          # Used in PV prefix: VPCAM:{instance_id}:...
+
+epics:
+  prefix: "VPCAM:01"        # Full PV prefix - must match instance_id above
+  beacon_address: "255.255.255.255"  # CA broadcast; customer may need to change for segmented networks
+
+camera:
+  type: imx708               # Camera type: imx708 | imx296 | imx296_mono | mock
+  sensor_mode: 0             # 0 = Full res (4608x2592), 1 = 2x2 Binned (2304x1296). Switchable live via cam1:SensorMode.
+  af_mode: 0                 # 0 = Manual, 1 = Auto, 2 = Continuous
+  lens_position: 4.3         # Diopters (1/meters). ~4.3 = ~23cm (~9in) working distance
+  ae_enable: 0               # Auto Exposure (AE): 0 = manual, 1 = auto. Must be 0 for AcquireTime/Gain to take effect.
+  exposure_time_us: 10000    # Microseconds. Only active when ae_enable = 0.
+  analogue_gain: 1.0         # Sensor analogue gain. Only active when ae_enable = 0.
+  brightness: 0.0            # Brightness offset (-1.0 to 1.0)
+  contrast: 1.0              # Contrast multiplier (0.0 to 32.0)
+  sharpness: 1.0             # Sharpness (0.0 to 16.0, 0 = disabled)
+  noise_reduction_mode: 0    # 0 = Off, 1 = Fast, 2 = High Quality
+  autotrigger_rate_hz: 2.0   # Start continuous acquisition at this rate on boot (0 = boot idle)
+
+roi:
+  x: 0                       # Crop X offset (pixels from left)
+  y: 0                       # Crop Y offset (pixels from top)
+  width: 4608                # Crop width (pixels) — IMX708 full sensor width
+  height: 2592               # Crop height (pixels) — IMX708 full sensor height
+  # image1:ArrayData NELM is always the full native sensor size; ROI is cropped
+  # at runtime via cam1:MinX/MinY/SizeX/SizeY and can grow back without restart.
+
+calibration:
+  x_mm_per_pixel: 1.0        # Update after optical calibration
+  y_mm_per_pixel: 1.0
+
+led:
+  gpio_pin: 18               # BCM pin number (physical pin 12)
+  default_state: 0           # 0 = off on startup

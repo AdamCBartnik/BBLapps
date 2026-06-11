@@ -1,0 +1,36 @@
+# /etc/vpcam/config.yaml
+# VPCam — Raspberry Pi Global Shutter Camera (IMX296) Configuration
+
+device:
+  hostname: vpcam-01         # Set this per deployment (must match Pi hostname)
+  instance_id: "01"           # Used in PV prefix: VPCAM:{instance_id}
+
+epics:
+  prefix: "VPCAM:01"         # Full PV prefix — must match instance_id above
+  beacon_address: "255.255.255.255"  # CA broadcast; change for segmented networks
+
+camera:
+  type: imx296               # Camera type: imx708 | imx296 | imx296_mono | mock
+  ae_enable: 0               # Auto Exposure: 0=manual, 1=auto.
+                             # Set 0 before writing AcquireTime/Gain.
+  exposure_time_us: 5000     # Microseconds. Min ~30 µs for IMX296. ae_enable must be 0.
+  analogue_gain: 1.0         # Sensor analogue gain. ae_enable must be 0.
+  autotrigger_rate_hz: 2.0   # Start continuous acquisition at this rate on boot (0 = boot idle)
+  hflip: 0                   # Horizontal flip: 0=normal, 1=flipped
+  vflip: 0                   # Vertical flip: 0=normal, 1=flipped
+
+roi:
+  x: 0                       # Crop X offset (pixels from left)
+  y: 0                       # Crop Y offset (pixels from top)
+  width: 1456                # IMX296 full sensor width
+  height: 1088               # IMX296 full sensor height
+  # image1:ArrayData NELM is always the full sensor size; ROI is cropped at
+  # runtime via cam1:MinX/MinY/SizeX/SizeY and can grow back without restart.
+
+calibration:
+  x_mm_per_pixel: 1.0        # Update after optical calibration
+  y_mm_per_pixel: 1.0
+
+led:
+  gpio_pin: 18               # BCM pin number (physical pin 12)
+  default_state: 0           # 0=off on startup

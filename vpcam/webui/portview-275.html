@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PortView 275 — Xelera Research</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:    #1a2b4a;
+      --blue:    #2c5f9e;
+      --blue-lt: #3d7abf;
+      --accent:  #c8a84b;   /* gold — xelera brand warmth */
+      --text:    #1e2433;
+      --muted:   #5a6478;
+      --bg:      #f8f9fc;
+      --white:   #ffffff;
+      --border:  #dce2ed;
+      --rule:    #c8d0df;
+    }
+
+    body {
+      font-family: 'Georgia', 'Times New Roman', serif;
+      color: var(--text);
+      background: var(--bg);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    /* ── Navigation ── */
+    nav {
+      background: var(--navy);
+      padding: 0 40px;
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      height: 60px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-logo {
+      font-family: system-ui, sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      color: #fff;
+      text-decoration: none;
+      margin-right: auto;
+    }
+    .nav-logo span { color: var(--accent); }
+    nav a {
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      color: rgba(255,255,255,.75);
+      text-decoration: none;
+      letter-spacing: .04em;
+      transition: color .15s;
+    }
+    nav a:hover { color: #fff; }
+    .nav-cta {
+      background: var(--accent);
+      color: var(--navy) !important;
+      font-weight: 700;
+      padding: 7px 18px;
+      border-radius: 4px;
+    }
+    .nav-cta:hover { opacity: .9; }
+
+    /* ── Hero ── */
+    .hero {
+      background: linear-gradient(135deg, var(--navy) 0%, #243a5e 100%);
+      color: #fff;
+      padding: 80px 40px 70px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: center;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .hero-text { }
+    .hero-badge {
+      display: inline-block;
+      background: rgba(200,168,75,.2);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: system-ui, sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      padding: 4px 12px;
+      border-radius: 3px;
+      margin-bottom: 20px;
+    }
+    .hero h1 {
+      font-size: 42px;
+      font-weight: 400;
+      line-height: 1.2;
+      margin-bottom: 8px;
+    }
+    .hero h1 strong { font-weight: 700; }
+    .hero-subtitle {
+      font-family: system-ui, sans-serif;
+      font-size: 15px;
+      color: rgba(255,255,255,.65);
+      margin-bottom: 28px;
+      line-height: 1.5;
+    }
+    .hero-actions { display: flex; gap: 14px; flex-wrap: wrap; }
+    .btn {
+      display: inline-block;
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 11px 26px;
+      border-radius: 4px;
+      text-decoration: none;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: var(--accent); color: var(--navy); }
+    .btn-outline { border: 1.5px solid rgba(255,255,255,.45); color: #fff; }
+
+    .hero-img {
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 10px;
+      aspect-ratio: 4/3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      color: rgba(255,255,255,.35);
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+    }
+    .hero-img svg { opacity: .5; }
+
+    /* ── Page wrapper ── */
+    .page { max-width: 1200px; margin: 0 auto; padding: 0 40px; }
+
+    /* ── Section headers ── */
+    section { padding: 64px 0; border-bottom: 1px solid var(--rule); }
+    section:last-child { border-bottom: none; }
+    .section-label {
+      font-family: system-ui, sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 12px;
+    }
+    h2 {
+      font-size: 30px;
+      font-weight: 400;
+      color: var(--navy);
+      margin-bottom: 20px;
+      line-height: 1.25;
+    }
+    h2 strong { font-weight: 700; }
+    .lead {
+      font-size: 17px;
+      color: var(--muted);
+      max-width: 680px;
+      margin-bottom: 40px;
+    }
+
+    /* ── Key features ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 28px;
+    }
+    .feature-card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 28px 24px;
+    }
+    .feature-icon {
+      width: 44px;
+      height: 44px;
+      background: #e8f0fb;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    .feature-card h3 {
+      font-family: system-ui, sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 8px;
+    }
+    .feature-card p {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    /* ── Operation overview ── */
+    .overview-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: start;
+    }
+    .overview-text h3 {
+      font-family: system-ui, sans-serif;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--navy);
+      margin: 28px 0 8px;
+    }
+    .overview-text h3:first-child { margin-top: 0; }
+    .overview-text p { font-size: 15px; color: var(--muted); margin-bottom: 10px; }
+    .overview-diagram {
+      background: var(--navy);
+      border-radius: 10px;
+      padding: 32px;
+      color: rgba(255,255,255,.85);
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 2;
+    }
+    .overview-diagram .d-title {
+      font-family: system-ui, sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+    .overview-diagram .d-row { display: flex; align-items: center; gap: 10px; }
+    .overview-diagram .d-box {
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 5px;
+      padding: 4px 10px;
+      white-space: nowrap;
+    }
+    .overview-diagram .d-arrow { color: rgba(255,255,255,.4); }
+    .overview-diagram .d-hl { color: var(--accent); }
+
+    /* ── Specifications ── */
+    .specs-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+    }
+    .spec-group h3 {
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--rule);
+    }
+    .spec-table { width: 100%; border-collapse: collapse; }
+    .spec-table td {
+      padding: 8px 0;
+      font-size: 14px;
+      vertical-align: top;
+      border-bottom: 1px solid var(--rule);
+    }
+    .spec-table tr:last-child td { border-bottom: none; }
+    .spec-table .spec-label {
+      color: var(--muted);
+      width: 50%;
+      padding-right: 16px;
+    }
+    .spec-table .spec-value {
+      font-family: system-ui, sans-serif;
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    /* ── EPICS / integration ── */
+    .epics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      align-items: start;
+    }
+    .pv-list {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .pv-list-header {
+      background: var(--navy);
+      color: rgba(255,255,255,.85);
+      font-family: system-ui, sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      padding: 10px 16px;
+    }
+    .pv-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 9px 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 12.5px;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+    .pv-row:last-child { border-bottom: none; }
+    .pv-name { color: var(--blue); }
+    .pv-desc { color: var(--muted); font-size: 11px; font-family: system-ui, sans-serif; text-align: right; }
+    .pv-rw   { font-size: 10px; font-family: system-ui, sans-serif; font-weight: 700;
+                background: #e8f0fb; color: var(--blue); border-radius: 3px; padding: 2px 5px; }
+    .pv-ro   { font-size: 10px; font-family: system-ui, sans-serif; font-weight: 700;
+                background: #f0f0f0; color: var(--muted); border-radius: 3px; padding: 2px 5px; }
+
+    /* ── Callout box ── */
+    .callout {
+      background: #eef4fb;
+      border-left: 4px solid var(--blue);
+      border-radius: 0 6px 6px 0;
+      padding: 18px 22px;
+      margin: 24px 0;
+      font-size: 15px;
+      color: var(--navy);
+    }
+
+    /* ── Footer ── */
+    footer {
+      background: var(--navy);
+      color: rgba(255,255,255,.55);
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      padding: 36px 40px;
+      text-align: center;
+    }
+    footer a { color: rgba(255,255,255,.7); text-decoration: none; }
+    footer a:hover { color: #fff; }
+
+    @media (max-width: 900px) {
+      .hero           { grid-template-columns: 1fr; }
+      .hero-img       { display: none; }
+      .features-grid  { grid-template-columns: 1fr 1fr; }
+      .overview-grid  { grid-template-columns: 1fr; }
+      .specs-grid     { grid-template-columns: 1fr; }
+      .epics-grid     { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      .features-grid { grid-template-columns: 1fr; }
+      nav { padding: 0 20px; gap: 16px; }
+      .page { padding: 0 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav>
+  <a class="nav-logo" href="#"><span>Xelera</span> Research</a>
+  <a href="#">Products</a>
+  <a href="#">Consulting</a>
+  <a href="#">About</a>
+  <a href="#contact" class="nav-cta">Contact Us</a>
+</nav>
+
+<!-- Hero -->
+<div style="background: linear-gradient(135deg, var(--navy) 0%, #243a5e 100%);">
+  <div class="hero">
+    <div class="hero-text">
+      <div class="hero-badge">Beamline Instrumentation</div>
+      <h1><strong>PortView 275</strong></h1>
+      <p class="hero-subtitle">
+        Compact viewport camera system for particle accelerator beamlines.
+        Image anything inside your vacuum chamber — scintillator screens, jet
+        targets, diagnostics, or general chamber inspection — with plug-and-play
+        EPICS integration and a live web dashboard.
+      </p>
+      <div class="hero-actions">
+        <a href="#contact" class="btn btn-primary">Request a Quote</a>
+        <a href="#specs" class="btn btn-outline">Specifications</a>
+      </div>
+    </div>
+    <div class="hero-img">
+      <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="32" cy="32" r="30" stroke="white" stroke-width="2"/>
+        <circle cx="32" cy="32" r="18" stroke="white" stroke-width="1.5"/>
+        <circle cx="32" cy="32" r="6"  fill="white" opacity=".6"/>
+        <line x1="32" y1="2"  x2="32" y2="12" stroke="white" stroke-width="2"/>
+        <line x1="32" y1="52" x2="32" y2="62" stroke="white" stroke-width="2"/>
+        <line x1="2"  y1="32" x2="12" y2="32" stroke="white" stroke-width="2"/>
+        <line x1="52" y1="32" x2="62" y2="32" stroke="white" stroke-width="2"/>
+      </svg>
+      <span>Product image coming soon</span>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+
+  <!-- Key Features -->
+  <section>
+    <div class="section-label">Why PortView 275</div>
+    <h2>A camera system built for <strong>accelerator environments</strong></h2>
+    <p class="lead">
+      Designed for accelerator physicists and engineers who need reliable,
+      calibrated imaging through a vacuum chamber viewport — without custom
+      software development or camera expertise.
+    </p>
+    <div class="features-grid">
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="22" height="22" fill="none" viewBox="0 0 22 22">
+            <rect x="2" y="2" width="18" height="18" rx="3" stroke="#2c5f9e" stroke-width="2"/>
+            <circle cx="11" cy="11" r="4" stroke="#2c5f9e" stroke-width="2"/>
+            <circle cx="11" cy="11" r="1.5" fill="#2c5f9e"/>
+          </svg>
+        </div>
+        <h3>Versatile Viewport Imaging</h3>
+        <p>Image scintillator screens, liquid metal jet targets, wire scanners,
+           alignment fixtures, or anything else visible through a standard
+           accelerator viewport. Any object, any beam diagnostic.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="22" height="22" fill="none" viewBox="0 0 22 22">
+            <path d="M4 11h14M11 4v14" stroke="#2c5f9e" stroke-width="2" stroke-linecap="round"/>
+            <rect x="7" y="7" width="8" height="8" rx="1" stroke="#2c5f9e" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <h3>Native EPICS Integration</h3>
+        <p>Full Channel Access PV set for all camera parameters, ROI control,
+           LED illumination, calibration, and image acquisition. Compatible with
+           Phoebus, MEDM, and any CA client.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="22" height="22" fill="none" viewBox="0 0 22 22">
+            <circle cx="11" cy="11" r="9" stroke="#2c5f9e" stroke-width="2"/>
+            <path d="M11 6v5l3 3" stroke="#2c5f9e" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3>Live Web Dashboard</h3>
+        <p>Built-in MJPEG stream and browser-based control panel accessible from
+           any machine on the lab network — no software installation required.
+           Includes interactive click-and-drag ROI drawing.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="22" height="22" fill="none" viewBox="0 0 22 22">
+            <path d="M3 19L11 3l8 16H3z" stroke="#2c5f9e" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M8 14h6" stroke="#2c5f9e" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3>Spatial Calibration</h3>
+        <p>Per-axis mm/pixel calibration stored in configuration and published as
+           EPICS PVs, enabling downstream tools to convert pixel coordinates to
+           physical positions on the target plane.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="22" height="22" fill="none" viewBox="0 0 22 22">
+            <rect x="3" y="6" width="16" height="12" rx="2" stroke="#2c5f9e" stroke-width="2"/>
+            <path d="M8 6V4a1 1 0 011-1h4a1 1 0 011 1v2" stroke="#2c5f9e" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <h3>Flexible Mounting</h3>
+        <p>Mounts directly on a vacuum viewport flange, or operates freestanding
+           on a tripod or periscope arm. Available for standard viewport sizes.
+           Custom flange adapters and working-distance configurations on request.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="22" height="22" fill="none" viewBox="0 0 22 22">
+            <path d="M4 4h14v14H4z" stroke="#2c5f9e" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M8 9h6M8 13h4" stroke="#2c5f9e" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3>Camera Options</h3>
+        <p>Standard configuration uses the IMX708 rolling-shutter sensor
+           (12 MP, f/1.8). A global-shutter variant based on the IMX296
+           with C-mount interchangeable optics is available for applications
+           requiring motion freeze or precision lens selection.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- How it Works -->
+  <section>
+    <div class="section-label">Operation</div>
+    <h2>From vacuum chamber viewport to <strong>EPICS PV</strong></h2>
+    <div class="overview-grid">
+      <div class="overview-text">
+        <h3>Image Acquisition</h3>
+        <p>The PortView 275 mounts on or near a beamline viewport and images
+           whatever is visible inside the vacuum chamber — scintillator screens,
+           jet targets, wire scanners, or general chamber interiors. The
+           Raspberry Pi CM5 captures frames via a CSI camera and publishes them
+           as EPICS waveform PVs over standard Channel Access.</p>
+
+        <h3>Mounting Options</h3>
+        <p>The system can be bolted directly onto a viewport flange, mounted on
+           a standard optical post or tripod, or integrated into a periscope arm
+           for off-axis viewing. Custom flange adapters for standard CF/ISO
+           viewport sizes are available.</p>
+
+        <h3>Region of Interest</h3>
+        <p>A configurable ROI crops the sensor before transmission, reducing PV
+           array size and focusing on the area of interest. ROI is set
+           interactively using the web dashboard's click-and-drag canvas, or via
+           EPICS setpoints, and applied instantly without rebooting.</p>
+
+        <h3>Focus & Exposure</h3>
+        <p>The standard IMX708 lens is driven to a fixed diopter setpoint for
+           consistent focus at a known working distance. The global-shutter
+           variant uses a C-mount lens system, allowing focal length and
+           aperture selection to match viewport geometry and target distance.
+           Auto-exposure and manual gain/exposure are both available via PV.</p>
+
+        <h3>Continuous or Triggered</h3>
+        <p>A configurable autotrigger rate keeps the image PV refreshed for
+           live viewing. Single-frame triggered acquisition is available for
+           synchronized or pulsed-beam measurements.</p>
+
+        <div class="callout">
+          The PortView 275 is operated entirely through EPICS — no GUI on the
+          device is required during normal beamline operation.
+        </div>
+      </div>
+
+      <div>
+        <div class="overview-diagram">
+          <div class="d-title">Signal Chain</div>
+          <div class="d-row"><div class="d-box">Scintillator Screen</div></div>
+          <div style="padding-left:20px;color:rgba(255,255,255,.3);line-height:1.8">↓ photons</div>
+          <div class="d-row"><div class="d-box">Viewport Window</div></div>
+          <div style="padding-left:20px;color:rgba(255,255,255,.3);line-height:1.8">↓ optical path</div>
+          <div class="d-row"><div class="d-box d-hl">IMX708 Camera (CSI)</div></div>
+          <div style="padding-left:20px;color:rgba(255,255,255,.3);line-height:1.8">↓ picamera2 / libcamera</div>
+          <div class="d-row"><div class="d-box d-hl">CM5 Image Processing</div></div>
+          <div style="padding-left:20px;color:rgba(255,255,255,.3);line-height:1.8">↓ caproto IOC</div>
+          <div class="d-row"><div class="d-box">EPICS Channel Access PVs</div></div>
+          <div style="padding-left:20px;color:rgba(255,255,255,.3);line-height:1.8">↓ lab Ethernet</div>
+          <div class="d-row"><div class="d-box d-hl">Phoebus / Web UI / any CA client</div></div>
+        </div>
+
+        <div style="margin-top:20px; background:var(--white); border:1px solid var(--border); border-radius:8px; padding:22px 20px;">
+          <div style="font-family:system-ui,sans-serif;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--blue);margin-bottom:14px;">Quick-Start</div>
+          <ol style="font-size:14px;color:var(--muted);padding-left:18px;line-height:2;">
+            <li>Connect Ethernet to lab network</li>
+            <li>Power via USB-C (5 V / 3 A)</li>
+            <li>Edit <code style="font-size:12px;background:#f0f4fb;padding:1px 5px;border-radius:3px;">/etc/vpcam/config.yaml</code></li>
+            <li><code style="font-size:12px;background:#f0f4fb;padding:1px 5px;border-radius:3px;">sudo systemctl start vpcam vpcam-web</code></li>
+            <li>Open <code style="font-size:12px;background:#f0f4fb;padding:1px 5px;border-radius:3px;">http://&lt;ip&gt;:8080</code> in any browser</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Specifications -->
+  <section id="specs">
+    <div class="section-label">Technical Specifications</div>
+    <h2><strong>PortView 275</strong> — Full Specification</h2>
+    <div class="specs-grid">
+
+      <div class="spec-group">
+        <h3>Imaging &mdash; Standard (Rolling Shutter)</h3>
+        <table class="spec-table">
+          <tr><td class="spec-label">Image Sensor</td><td class="spec-value">Sony IMX708, 1/2.43&Prime; (rolling shutter)</td></tr>
+          <tr><td class="spec-label">Native Resolution</td><td class="spec-value">4608 &times; 2592 px (12 MP)</td></tr>
+          <tr><td class="spec-label">Binned Mode</td><td class="spec-value">2304 &times; 1296 px (2&times;2 binning)</td></tr>
+          <tr><td class="spec-label">Pixel Size</td><td class="spec-value">1.4 &micro;m &times; 1.4 &micro;m</td></tr>
+          <tr><td class="spec-label">Aperture</td><td class="spec-value">f/1.8</td></tr>
+          <tr><td class="spec-label">Focus</td><td class="spec-value">VCM autofocus; software-fixed diopter setpoint</td></tr>
+          <tr><td class="spec-label">Exposure Control</td><td class="spec-value">Auto or manual (1 &micro;s &ndash; 112 s)</td></tr>
+          <tr><td class="spec-label">Analogue Gain</td><td class="spec-value">1.0 &ndash; 16.0&times;</td></tr>
+        </table>
+        <div style="margin-top:16px;padding:14px 18px;background:#eef4fb;border-left:4px solid #2c5f9e;border-radius:0 6px 6px 0;font-family:system-ui,sans-serif;font-size:14px;color:#1a2b4a;">
+          <strong>Global Shutter Option (IMX296)</strong><br>
+          For applications requiring freeze-frame capture of fast-moving targets — wire scanners,
+          oscillating structures, or any subject where rolling-shutter skew is unacceptable —
+          a variant using the Sony IMX296 global-shutter sensor (1.58 MP, 1440 &times; 1080, C-mount lens)
+          is available. Contact us to discuss camera selection for your application.
+        </div>
+      </div>
+
+      <div class="spec-group">
+        <h3>Compute &amp; Connectivity</h3>
+        <table class="spec-table">
+          <tr><td class="spec-label">Compute Module</td><td class="spec-value">Raspberry Pi CM5</td></tr>
+          <tr><td class="spec-label">Baseboard</td><td class="spec-value">Waveshare CM5 Nano B</td></tr>
+          <tr><td class="spec-label">Storage</td><td class="spec-value">eMMC (onboard)</td></tr>
+          <tr><td class="spec-label">Network</td><td class="spec-value">Gigabit Ethernet (RJ45)</td></tr>
+          <tr><td class="spec-label">Power Input</td><td class="spec-value">USB-C, 5 V / 3 A min</td></tr>
+          <tr><td class="spec-label">Operating System</td><td class="spec-value">Raspberry Pi OS Lite 64-bit (Bookworm)</td></tr>
+        </table>
+      </div>
+
+      <div class="spec-group">
+        <h3>EPICS &amp; Software</h3>
+        <table class="spec-table">
+          <tr><td class="spec-label">IOC Framework</td><td class="spec-value">caproto (Python)</td></tr>
+          <tr><td class="spec-label">Protocol</td><td class="spec-value">EPICS Channel Access (CA)</td></tr>
+          <tr><td class="spec-label">PV Prefix</td><td class="spec-value">Configurable, e.g. <code>VPCAM:01:</code></td></tr>
+          <tr><td class="spec-label">Image PV Type</td><td class="spec-value">Waveform (uint8), grayscale</td></tr>
+          <tr><td class="spec-label">Max Image Size</td><td class="spec-value">~11.9 MB (full sensor)</td></tr>
+          <tr><td class="spec-label">Web UI</td><td class="spec-value">Flask / MJPEG, port 8080</td></tr>
+          <tr><td class="spec-label">Phoebus Display</td><td class="spec-value">Included (.bob)</td></tr>
+          <tr><td class="spec-label">Frame Rate</td><td class="spec-value">Configurable autotrigger, 0–10 Hz typical</td></tr>
+        </table>
+      </div>
+
+      <div class="spec-group">
+        <h3>Mechanical &amp; Environmental</h3>
+        <table class="spec-table">
+          <tr><td class="spec-label">Enclosure</td><td class="spec-value">3D-printed ASA (UV/chemical resistant)</td></tr>
+          <tr><td class="spec-label">Camera Interface</td><td class="spec-value">CSI ribbon (internal)</td></tr>
+          <tr><td class="spec-label">LED Connector</td><td class="spec-value">JST-XH 2-pin</td></tr>
+          <tr><td class="spec-label">GPIO Connector</td><td class="spec-value">JST-XH 3-pin (5 V, GND, LED ctrl)</td></tr>
+          <tr><td class="spec-label">LED Driver</td><td class="spec-value">MMBT2222A NPN, 5 V / 60 mA max</td></tr>
+          <tr><td class="spec-label">Operating Temp.</td><td class="spec-value">0 – 50 °C (fan recommended above 40 °C)</td></tr>
+        </table>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- EPICS PV Reference -->
+  <section id="epics">
+    <div class="section-label">EPICS Integration</div>
+    <h2>Channel Access <strong>PV Reference</strong></h2>
+    <p class="lead">
+      All PV names follow the pattern <code style="font-size:15px;background:#e8f0fb;padding:2px 8px;border-radius:3px;">&lt;PREFIX&gt;:&lt;suffix&gt;</code>.
+      The prefix is set in <code style="font-size:15px;background:#e8f0fb;padding:2px 8px;border-radius:3px;">config.yaml</code>
+      (default: <code style="font-size:15px;background:#e8f0fb;padding:2px 8px;border-radius:3px;">VPCAM:01</code>).
+    </p>
+    <div class="epics-grid">
+
+      <div>
+        <div class="pv-list">
+          <div class="pv-list-header">Image &amp; Acquisition (standard areaDetector)</div>
+          <div class="pv-row"><span class="pv-name">image1:ArrayData</span><span class="pv-ro">RO</span><span class="pv-desc">Image waveform (uint16)</span></div>
+          <div class="pv-row"><span class="pv-name">image1:ArraySize0_RBV</span><span class="pv-ro">RO</span><span class="pv-desc">Active frame width (px)</span></div>
+          <div class="pv-row"><span class="pv-name">image1:ArraySize1_RBV</span><span class="pv-ro">RO</span><span class="pv-desc">Active frame height (px)</span></div>
+          <div class="pv-row"><span class="pv-name">image1:ArrayCounter_RBV</span><span class="pv-ro">RO</span><span class="pv-desc">Frame counter — monitor for new frames</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:Acquire</span><span class="pv-rw">RW</span><span class="pv-desc">Start/stop acquisition (Done/Acquire)</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:AcquirePeriod</span><span class="pv-rw">RW</span><span class="pv-desc">Seconds per frame (continuous mode)</span></div>
+          <div class="pv-row"><span class="pv-name">image1:TimeStamp_RBV</span><span class="pv-ro">RO</span><span class="pv-desc">Unix timestamp of last frame</span></div>
+        </div>
+
+        <div class="pv-list" style="margin-top:20px;">
+          <div class="pv-list-header">Region of Interest</div>
+          <div class="pv-row"><span class="pv-name">cam1:MinX</span><span class="pv-rw">RW</span><span class="pv-desc">X offset (px) — applies immediately</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:MinY</span><span class="pv-rw">RW</span><span class="pv-desc">Y offset (px) — applies immediately</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:SizeX</span><span class="pv-rw">RW</span><span class="pv-desc">Width (px) — clamped by driver</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:SizeY</span><span class="pv-rw">RW</span><span class="pv-desc">Height (px) — clamped by driver</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:MaxSizeX_RBV</span><span class="pv-ro">RO</span><span class="pv-desc">Full sensor width (px)</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:MaxSizeY_RBV</span><span class="pv-ro">RO</span><span class="pv-desc">Full sensor height (px)</span></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="pv-list">
+          <div class="pv-list-header">Camera Controls</div>
+          <div class="pv-row"><span class="pv-name">cam1:AfMode</span><span class="pv-rw">RW</span><span class="pv-desc">Autofocus mode (0=manual)</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:LensPosition</span><span class="pv-rw">RW</span><span class="pv-desc">Focus setpoint (diopters)</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:AeEnable</span><span class="pv-rw">RW</span><span class="pv-desc">Auto-exposure on/off</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:AcquireTime</span><span class="pv-rw">RW</span><span class="pv-desc">Manual exposure (seconds)</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:Gain</span><span class="pv-rw">RW</span><span class="pv-desc">Analogue gain (1.0–16.0)</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:Brightness</span><span class="pv-rw">RW</span><span class="pv-desc">Brightness (−1.0 to 1.0)</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:LedEnable</span><span class="pv-rw">RW</span><span class="pv-desc">LED on/off</span></div>
+        </div>
+
+        <div class="pv-list" style="margin-top:20px;">
+          <div class="pv-list-header">System &amp; Calibration</div>
+          <div class="pv-row"><span class="pv-name">cam1:Hostname_RBV</span><span class="pv-ro">RO</span><span class="pv-desc">Device hostname</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:IpAddr_RBV</span><span class="pv-ro">RO</span><span class="pv-desc">Primary IP address</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:CpuTemp_RBV</span><span class="pv-ro">RO</span><span class="pv-desc">CPU temperature (°C)</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:Uptime_RBV</span><span class="pv-ro">RO</span><span class="pv-desc">IOC uptime (s)</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:CalibX</span><span class="pv-rw">RW</span><span class="pv-desc">X scale (µm/px)</span></div>
+          <div class="pv-row"><span class="pv-name">cam1:CalibY</span><span class="pv-rw">RW</span><span class="pv-desc">Y scale (µm/px)</span></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Contact -->
+  <section id="contact">
+    <div class="section-label">Get in Touch</div>
+    <h2>Interested in the <strong>PortView 275</strong>?</h2>
+    <p class="lead">
+      Contact Xelera Research to discuss your beamline imaging requirements,
+      request a quote, or inquire about custom configurations.
+    </p>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;">
+      <a href="mailto:info@xeleraresearch.com" class="btn btn-primary">Email Us</a>
+      <a href="https://www.xeleraresearch.com" class="btn" style="border:1.5px solid var(--border);color:var(--navy);">Visit xeleraresearch.com</a>
+    </div>
+    <div style="margin-top:36px;padding:24px;background:var(--white);border:1px solid var(--border);border-radius:8px;max-width:520px;">
+      <div style="font-family:system-ui,sans-serif;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--blue);margin-bottom:14px;">Xelera Research LLC</div>
+      <p style="font-size:14px;color:var(--muted);line-height:1.8;">
+        Particle accelerator design and technology<br>
+        Ithaca, New York<br>
+        <a href="https://www.xeleraresearch.com" style="color:var(--blue);">www.xeleraresearch.com</a>
+      </p>
+    </div>
+  </section>
+
+</div><!-- .page -->
+
+<footer>
+  <p>
+    &copy; 2025 Xelera Research LLC &nbsp;·&nbsp;
+    <a href="https://www.xeleraresearch.com">xeleraresearch.com</a> &nbsp;·&nbsp;
+    Ithaca, New York
+  </p>
+  <p style="margin-top:8px;font-size:12px;">
+    PortView 275 is a product of Xelera Research LLC. Specifications subject to change.
+  </p>
+</footer>
+
+</body>
+</html>

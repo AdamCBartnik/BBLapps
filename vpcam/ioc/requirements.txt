@@ -1,0 +1,7 @@
+caproto
+picamera2
+numpy
+pyyaml
+flask
+pillow
+rawpy        # imx296_mono only (DNG decode); other camera types don't need it

@@ -1,0 +1,28 @@
+[Unit]
+Description=VPCam Web UI
+Documentation=https://github.com/xelera/vpcam
+After=network-online.target vpcam.service
+Wants=network-online.target
+# Start after the IOC — but do not hard-depend on it; the web UI handles
+# a temporarily-offline IOC gracefully.
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/vpcam/webui
+ExecStart=/usr/bin/python3 /home/pi/vpcam/webui/vpcam_web.py
+Restart=on-failure
+RestartSec=5
+
+# Allow the web service to restart the IOC via sudo
+# (add to /etc/sudoers.d/vpcam-web: pi ALL=(ALL) NOPASSWD: /bin/systemctl restart vpcam)
+Environment=PYTHONUNBUFFERED=1
+Environment=VPCAM_CONFIG=/etc/vpcam/config.yaml
+Environment=VPCAM_WEB_PORT=8080
+Environment=EPICS_CA_MAX_ARRAY_BYTES=40000000
+Environment=EPICS_CA_ADDR_LIST=127.0.0.1
+Environment=EPICS_CA_AUTO_ADDR_LIST=NO
+
+[Install]
+WantedBy=multi-user.target

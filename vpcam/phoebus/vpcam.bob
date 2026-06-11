@@ -1,0 +1,758 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  VPCam Phoebus screen — standard-areaDetector contract (ad_ioc_base.py).
+
+  Open with macro P set to the camera prefix INCLUDING trailing colon,
+  e.g. P=VPCAM:02:  — defaults to VPCAM:01: when opened standalone.
+
+  ROI semantics: MinX/MinY/SizeX/SizeY apply immediately on write (the
+  driver clamps).  "Reset ROI" exploits the clamping: it writes offsets 0
+  and oversized dimensions, which the driver clamps to the full sensor.
+-->
+<display version="2.0.0">
+  <name>VPCam</name>
+  <macros>
+    <P>VPCAM:01:</P>
+  </macros>
+  <width>1250</width>
+  <height>875</height>
+  <widget type="label" version="2.0.0">
+    <name>Title</name>
+    <text>VPCam Dashboard</text>
+    <x>10</x>
+    <y>8</y>
+    <width>210</width>
+    <height>26</height>
+    <font>
+      <font family="Liberation Sans" style="BOLD" size="16.0">
+      </font>
+    </font>
+  </widget>
+  <widget type="label" version="2.0.0">
+    <text>Hostname:</text>
+    <x>230</x>
+    <y>11</y>
+    <width>75</width>
+    <height>18</height>
+  </widget>
+  <widget type="textupdate" version="2.0.0">
+    <name>Hostname</name>
+    <pv_name>$(P)cam1:Hostname_RBV</pv_name>
+    <x>308</x>
+    <y>9</y>
+    <width>110</width>
+    <height>22</height>
+    <format>6</format>
+  </widget>
+  <widget type="label" version="2.0.0">
+    <text>IP:</text>
+    <x>430</x>
+    <y>11</y>
+    <width>22</width>
+    <height>18</height>
+  </widget>
+  <widget type="textupdate" version="2.0.0">
+    <name>IPAddr</name>
+    <pv_name>$(P)cam1:IpAddr_RBV</pv_name>
+    <x>455</x>
+    <y>9</y>
+    <width>130</width>
+    <height>22</height>
+    <format>6</format>
+  </widget>
+  <widget type="label" version="2.0.0">
+    <text>CPU Temp:</text>
+    <x>600</x>
+    <y>11</y>
+    <width>75</width>
+    <height>18</height>
+  </widget>
+  <widget type="textupdate" version="2.0.0">
+    <name>CPUTemp</name>
+    <pv_name>$(P)cam1:CpuTemp_RBV</pv_name>
+    <x>678</x>
+    <y>9</y>
+    <width>55</width>
+    <height>22</height>
+  </widget>
+  <widget type="label" version="2.0.0">
+    <text>°C</text>
+    <x>736</x>
+    <y>11</y>
+    <width>22</width>
+    <height>18</height>
+  </widget>
+  <widget type="label" version="2.0.0">
+    <text>Uptime:</text>
+    <x>770</x>
+    <y>11</y>
+    <width>55</width>
+    <height>18</height>
+  </widget>
+  <widget type="textupdate" version="2.0.0">
+    <name>Uptime</name>
+    <pv_name>$(P)cam1:Uptime_RBV</pv_name>
+    <x>828</x>
+    <y>9</y>
+    <width>80</width>
+    <height>22</height>
+  </widget>
+  <widget type="label" version="2.0.0">
+    <text>s</text>
+    <x>912</x>
+    <y>11</y>
+    <width>12</width>
+    <height>18</height>
+  </widget>
+  <widget type="group" version="3.0.0">
+    <name>Live Image</name>
+    <x>10</x>
+    <y>42</y>
+    <width>668</width>
+    <height>557</height>
+    <style>1</style>
+    <widget type="image" version="2.0.0">
+      <name>CameraImage</name>
+      <pv_name>$(P)image1:ArrayData</pv_name>
+      <x>5</x>
+      <y>20</y>
+      <width>656</width>
+      <height>480</height>
+      <color_map>
+        <name>GRAY</name>
+      </color_map>
+      <data_width>4608</data_width>
+      <data_height>2592</data_height>
+      <unsigned>true</unsigned>
+      <rules>
+        <!-- Rules trigger ONLY on the scalar dimension PVs, NOT on ArrayData.
+             The IOC always writes ArraySize0/1_RBV BEFORE ArrayData in
+             _publish_frame, so by the time the large waveform arrives these
+             rules have already fired and data_width / data_height are set
+             correctly.  Adding ArrayData as a trigger caused issues: on
+             initial connection the large waveform arrives before the rules
+             can fire from the small scalar PVs, causing a momentary
+             dimension mismatch. -->
+        <rule name="UpdateDataWidth" prop_id="data_width" out_exp="true">
+          <exp bool_exp="true">
+            <value>pvInt("$(P)image1:ArraySize0_RBV")</value>
+          </exp>
+          <pv_name>$(P)image1:ArraySize0_RBV</pv_name>
+        </rule>
+        <rule name="UpdateDataHeight" prop_id="data_height" out_exp="true">
+          <exp bool_exp="true">
+            <value>pvInt("$(P)image1:ArraySize1_RBV")</value>
+          </exp>
+          <pv_name>$(P)image1:ArraySize1_RBV</pv_name>
+        </rule>
+      </rules>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Size:</text>
+      <x>5</x>
+      <y>510</y>
+      <width>40</width>
+      <height>18</height>
+    </widget>
+    <widget type="textupdate" version="2.0.0">
+      <pv_name>$(P)image1:ArraySize0_RBV</pv_name>
+      <x>48</x>
+      <y>508</y>
+      <width>60</width>
+      <height>22</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>×</text>
+      <x>112</x>
+      <y>510</y>
+      <width>12</width>
+      <height>18</height>
+    </widget>
+    <widget type="textupdate" version="2.0.0">
+      <pv_name>$(P)image1:ArraySize1_RBV</pv_name>
+      <x>128</x>
+      <y>508</y>
+      <width>60</width>
+      <height>22</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>px</text>
+      <x>200</x>
+      <y>510</y>
+      <width>20</width>
+      <height>18</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Last Frame:</text>
+      <x>310</x>
+      <y>510</y>
+      <width>95</width>
+      <height>18</height>
+    </widget>
+    <widget type="textupdate" version="2.0.0">
+      <name>FrameTimestamp</name>
+      <pv_name>$(P)image1:TimeStamp_RBV</pv_name>
+      <x>408</x>
+      <y>508</y>
+      <width>170</width>
+      <height>22</height>
+    </widget>
+  </widget>
+  <widget type="group" version="3.0.0">
+    <name>Acquisition</name>
+    <x>688</x>
+    <y>42</y>
+    <width>540</width>
+    <height>105</height>
+    <style>1</style>
+    <widget type="action_button" version="3.0.0">
+      <name>StartButton</name>
+      <actions>
+        <action type="write_pv">
+          <description>Continuous mode</description>
+          <pv_name>$(P)cam1:ImageMode</pv_name>
+          <value>2</value>
+        </action>
+        <action type="write_pv">
+          <description>Start acquisition</description>
+          <pv_name>$(P)cam1:Acquire</pv_name>
+          <value>1</value>
+        </action>
+      </actions>
+      <text>Start</text>
+      <x>5</x>
+      <y>22</y>
+      <width>80</width>
+      <tooltip>Start continuous acquisition</tooltip>
+    </widget>
+    <widget type="action_button" version="3.0.0">
+      <name>StopButton</name>
+      <actions>
+        <action type="write_pv">
+          <description>Stop acquisition</description>
+          <pv_name>$(P)cam1:Acquire</pv_name>
+          <value>0</value>
+        </action>
+      </actions>
+      <text>Stop</text>
+      <x>90</x>
+      <y>22</y>
+      <width>80</width>
+      <tooltip>Stop acquisition</tooltip>
+    </widget>
+    <widget type="action_button" version="3.0.0">
+      <name>TriggerButton</name>
+      <actions>
+        <action type="write_pv">
+          <description>Single mode</description>
+          <pv_name>$(P)cam1:ImageMode</pv_name>
+          <value>0</value>
+        </action>
+        <action type="write_pv">
+          <description>Fire</description>
+          <pv_name>$(P)cam1:Acquire</pv_name>
+          <value>1</value>
+        </action>
+        <action type="write_pv">
+          <description>Restore continuous mode</description>
+          <pv_name>$(P)cam1:ImageMode</pv_name>
+          <value>2</value>
+        </action>
+      </actions>
+      <text>Single</text>
+      <x>175</x>
+      <y>22</y>
+      <width>80</width>
+      <tooltip>Capture one frame</tooltip>
+    </widget>
+    <widget type="textupdate" version="2.0.0">
+      <name>AcquireState</name>
+      <pv_name>$(P)cam1:Acquire_RBV</pv_name>
+      <x>260</x>
+      <y>24</y>
+      <width>80</width>
+      <height>22</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Period:</text>
+      <x>5</x>
+      <y>64</y>
+      <width>55</width>
+      <height>18</height>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <name>AcquirePeriod</name>
+      <pv_name>$(P)cam1:AcquirePeriod</pv_name>
+      <x>62</x>
+      <y>61</y>
+      <width>70</width>
+      <height>26</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>s/frame</text>
+      <x>136</x>
+      <y>64</y>
+      <width>55</width>
+      <height>18</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Actual rate:</text>
+      <x>240</x>
+      <y>64</y>
+      <width>85</width>
+      <height>18</height>
+    </widget>
+    <widget type="textupdate" version="2.0.0">
+      <name>ArrayRate</name>
+      <pv_name>$(P)cam1:ArrayRate_RBV</pv_name>
+      <x>328</x>
+      <y>61</y>
+      <width>60</width>
+      <height>22</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Hz</text>
+      <x>392</x>
+      <y>64</y>
+      <width>25</width>
+      <height>18</height>
+    </widget>
+  </widget>
+  <widget type="group" version="3.0.0">
+    <name>Camera Controls</name>
+    <x>688</x>
+    <y>147</y>
+    <width>540</width>
+    <height>385</height>
+    <style>1</style>
+    <widget type="label" version="2.0.0">
+      <text>AF Mode:</text>
+      <x>5</x>
+      <y>25</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <name>AfMode</name>
+      <pv_name>$(P)cam1:AfMode</pv_name>
+      <x>118</x>
+      <y>23</y>
+      <width>55</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>0 = Manual   1 = Auto   2 = Continuous   (IMX708 only)</text>
+      <x>180</x>
+      <y>25</y>
+      <width>340</width>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Lens Position:</text>
+      <x>5</x>
+      <y>58</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <name>LensPosition</name>
+      <pv_name>$(P)cam1:LensPosition</pv_name>
+      <x>118</x>
+      <y>56</y>
+      <width>80</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>diopters  (0=infinity, ~4.3=23cm)  AfMode must be 0</text>
+      <x>203</x>
+      <y>58</y>
+      <width>320</width>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>AE Enable:</text>
+      <x>5</x>
+      <y>93</y>
+      <width>110</width>
+    </widget>
+    <widget type="checkbox" version="2.0.0">
+      <name>AeEnable</name>
+      <pv_name>$(P)cam1:AeEnable</pv_name>
+      <label>Auto</label>
+      <x>118</x>
+      <y>90</y>
+      <width>80</width>
+      <height>26</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Must be OFF for manual Exposure/Gain to take effect</text>
+      <x>203</x>
+      <y>93</y>
+      <width>320</width>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Exposure Time:</text>
+      <x>5</x>
+      <y>128</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <name>AcquireTime</name>
+      <pv_name>$(P)cam1:AcquireTime</pv_name>
+      <x>118</x>
+      <y>126</y>
+      <width>80</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>seconds   (requires AE Enable = OFF)</text>
+      <x>203</x>
+      <y>128</y>
+      <width>320</width>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Analogue Gain:</text>
+      <x>5</x>
+      <y>163</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <name>Gain</name>
+      <pv_name>$(P)cam1:Gain</pv_name>
+      <x>118</x>
+      <y>161</y>
+      <width>80</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>(requires AE Enable = OFF)</text>
+      <x>203</x>
+      <y>163</y>
+      <width>320</width>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Brightness:</text>
+      <x>5</x>
+      <y>198</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <name>Brightness</name>
+      <pv_name>$(P)cam1:Brightness</pv_name>
+      <x>118</x>
+      <y>196</y>
+      <width>80</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>-1.0 to 1.0  (default 0.0, IMX708 only)</text>
+      <x>203</x>
+      <y>198</y>
+      <width>320</width>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Contrast:</text>
+      <x>5</x>
+      <y>233</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <name>Contrast</name>
+      <pv_name>$(P)cam1:Contrast</pv_name>
+      <x>118</x>
+      <y>231</y>
+      <width>80</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>0.0 to 32.0  (default 1.0, IMX708 only)</text>
+      <x>203</x>
+      <y>233</y>
+      <width>320</width>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Sharpness:</text>
+      <x>5</x>
+      <y>268</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <name>Sharpness</name>
+      <pv_name>$(P)cam1:Sharpness</pv_name>
+      <x>118</x>
+      <y>266</y>
+      <width>80</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>0.0 to 16.0  (default 1.0, 0=off, IMX708 only)</text>
+      <x>203</x>
+      <y>268</y>
+      <width>320</width>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Noise Reduction:</text>
+      <x>5</x>
+      <y>303</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <name>NoiseReductionMode</name>
+      <pv_name>$(P)cam1:NoiseReductionMode</pv_name>
+      <x>118</x>
+      <y>301</y>
+      <width>55</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>0=Off  1=Fast  2=High Quality  (IMX708 only)</text>
+      <x>180</x>
+      <y>303</y>
+      <width>340</width>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Sensor Mode:</text>
+      <x>5</x>
+      <y>338</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <name>SensorMode</name>
+      <pv_name>$(P)cam1:SensorMode</pv_name>
+      <x>118</x>
+      <y>336</y>
+      <width>55</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>0=Full(4608×2592)  1=2×2Binned(2304×1296)  applies live, resets ROI</text>
+      <x>180</x>
+      <y>338</y>
+      <width>350</width>
+    </widget>
+  </widget>
+  <widget type="group" version="3.0.0">
+    <name>Region of Interest</name>
+    <x>688</x>
+    <y>532</y>
+    <width>540</width>
+    <height>220</height>
+    <style>1</style>
+    <widget type="label" version="2.0.0">
+      <text>Setpoint</text>
+      <x>118</x>
+      <y>5</y>
+      <width>90</width>
+      <height>18</height>
+      <font>
+        <font family="Liberation Sans" style="BOLD" size="11.0">
+        </font>
+      </font>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Active</text>
+      <x>222</x>
+      <y>5</y>
+      <width>90</width>
+      <height>18</height>
+      <font>
+        <font family="Liberation Sans" style="BOLD" size="11.0">
+        </font>
+      </font>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>X Offset (px):</text>
+      <x>5</x>
+      <y>28</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <pv_name>$(P)cam1:MinX</pv_name>
+      <x>118</x>
+      <y>26</y>
+      <width>85</width>
+      <height>24</height>
+    </widget>
+    <widget type="textupdate" version="2.0.0">
+      <pv_name>$(P)cam1:MinX_RBV</pv_name>
+      <x>222</x>
+      <y>26</y>
+      <width>85</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Y Offset (px):</text>
+      <x>5</x>
+      <y>60</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <pv_name>$(P)cam1:MinY</pv_name>
+      <x>118</x>
+      <y>58</y>
+      <width>85</width>
+      <height>24</height>
+    </widget>
+    <widget type="textupdate" version="2.0.0">
+      <pv_name>$(P)cam1:MinY_RBV</pv_name>
+      <x>222</x>
+      <y>58</y>
+      <width>85</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Width (px):</text>
+      <x>5</x>
+      <y>92</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <pv_name>$(P)cam1:SizeX</pv_name>
+      <x>118</x>
+      <y>90</y>
+      <width>85</width>
+      <height>24</height>
+    </widget>
+    <widget type="textupdate" version="2.0.0">
+      <pv_name>$(P)cam1:SizeX_RBV</pv_name>
+      <x>222</x>
+      <y>90</y>
+      <width>85</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Height (px):</text>
+      <x>5</x>
+      <y>124</y>
+      <width>110</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <pv_name>$(P)cam1:SizeY</pv_name>
+      <x>118</x>
+      <y>122</y>
+      <width>85</width>
+      <height>24</height>
+    </widget>
+    <widget type="textupdate" version="2.0.0">
+      <pv_name>$(P)cam1:SizeY_RBV</pv_name>
+      <x>222</x>
+      <y>122</y>
+      <width>85</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Writes apply immediately (values are clamped by the driver).</text>
+      <x>320</x>
+      <y>28</y>
+      <width>210</width>
+      <height>54</height>
+    </widget>
+    <widget type="action_button" version="3.0.0">
+      <name>ResetROI</name>
+      <actions>
+        <action type="write_pv">
+          <description>X offset to 0</description>
+          <pv_name>$(P)cam1:MinX</pv_name>
+          <value>0</value>
+        </action>
+        <action type="write_pv">
+          <description>Y offset to 0</description>
+          <pv_name>$(P)cam1:MinY</pv_name>
+          <value>0</value>
+        </action>
+        <action type="write_pv">
+          <description>Width to max (driver clamps)</description>
+          <pv_name>$(P)cam1:SizeX</pv_name>
+          <value>99999</value>
+        </action>
+        <action type="write_pv">
+          <description>Height to max (driver clamps)</description>
+          <pv_name>$(P)cam1:SizeY</pv_name>
+          <value>99999</value>
+        </action>
+      </actions>
+      <text>Reset ROI</text>
+      <x>5</x>
+      <y>163</y>
+      <width>120</width>
+      <tooltip>Reset ROI to full sensor</tooltip>
+    </widget>
+  </widget>
+  <widget type="group" version="3.0.0">
+    <name>LED Illumination</name>
+    <x>688</x>
+    <y>752</y>
+    <width>265</width>
+    <height>108</height>
+    <style>1</style>
+    <widget type="label" version="2.0.0">
+      <text>Enable:</text>
+      <x>5</x>
+      <y>25</y>
+      <width>60</width>
+    </widget>
+    <widget type="checkbox" version="2.0.0">
+      <name>LEDEnable</name>
+      <pv_name>$(P)cam1:LedEnable</pv_name>
+      <label>On</label>
+      <x>70</x>
+      <y>22</y>
+      <width>80</width>
+      <height>26</height>
+    </widget>
+    <widget type="led" version="2.0.0">
+      <name>LEDEnableIndicator</name>
+      <pv_name>$(P)cam1:LedEnable</pv_name>
+      <x>155</x>
+      <y>25</y>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Status:</text>
+      <x>5</x>
+      <y>62</y>
+      <width>60</width>
+    </widget>
+    <widget type="led" version="2.0.0">
+      <name>LEDStatusIndicator</name>
+      <pv_name>$(P)cam1:LedStatus_RBV</pv_name>
+      <x>70</x>
+      <y>62</y>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>(software state only)</text>
+      <x>96</x>
+      <y>62</y>
+      <width>150</width>
+    </widget>
+  </widget>
+  <widget type="group" version="3.0.0">
+    <name>Calibration</name>
+    <x>963</x>
+    <y>752</y>
+    <width>265</width>
+    <height>108</height>
+    <style>1</style>
+    <widget type="label" version="2.0.0">
+      <text>X (µm/px):</text>
+      <x>5</x>
+      <y>25</y>
+      <width>80</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <pv_name>$(P)cam1:CalibX</pv_name>
+      <x>90</x>
+      <y>23</y>
+      <width>110</width>
+      <height>24</height>
+    </widget>
+    <widget type="label" version="2.0.0">
+      <text>Y (µm/px):</text>
+      <x>5</x>
+      <y>62</y>
+      <width>80</width>
+    </widget>
+    <widget type="textentry" version="3.0.0">
+      <pv_name>$(P)cam1:CalibY</pv_name>
+      <x>90</x>
+      <y>60</y>
+      <width>110</width>
+      <height>24</height>
+    </widget>
+  </widget>
+</display>

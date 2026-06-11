@@ -1,0 +1,29 @@
+[Unit]
+Description=VPCam Scintillator Camera IOC
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+# gpio group required for pinctrl subprocess calls (LED control).
+# Without this, pinctrl may be denied access to /dev/gpiomem when run
+# from the service even though the interactive pi user has gpio membership.
+SupplementaryGroups=gpio
+WorkingDirectory=/home/pi/vpcam/ioc
+ExecStart=/usr/bin/python3 /home/pi/vpcam/ioc/vpcam_launcher.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Path to config — override here if needed
+Environment=VPCAM_CONFIG=/etc/vpcam/config.yaml
+
+# Required for full-resolution image PVs over CA.
+# IMX708 color frame ~34 MB; set large enough for any supported camera.
+# Must also be set on any client machine connecting to image PVs.
+Environment=EPICS_CA_MAX_ARRAY_BYTES=40000000
+
+[Install]
+WantedBy=multi-user.target
