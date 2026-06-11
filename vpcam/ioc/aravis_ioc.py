@@ -14,14 +14,34 @@ A nice Aravis perk: connection is by unicast to the given IP, with no
 broadcast discovery step — so it can even reach a camera across a routed
 subnet, where GenTL producers see nothing.
 
-Build recipe (inside a conda env, no root):
+Build recipe (inside a conda env, no root — battle-tested on SL 7.9,
+glibc 2.17, 2026-06-11):
+
+    # Run ALL mamba installs from the OLDEST machine that shares the env:
+    # the solver checks glibc compatibility against the machine it runs on,
+    # so installs from a newer machine can pull packages the old one can't load.
     mamba install -c conda-forge compilers meson ninja pkg-config glib \\
-        libxml2 gobject-introspection pygobject
+        libxml2-devel gobject-introspection pygobject "sysroot_linux-64=2.17"
+    #   libxml2-devel: conda-forge split the .pc/headers out of libxml2
+    #   sysroot 2.17:  conda compilers default to a newer glibc baseline;
+    #                  this pin makes builds run on old hosts (and makes the
+    #                  build machine irrelevant — it cross-targets 2.17)
+
     curl -LO https://github.com/AravisProject/aravis/releases/download/0.8.35/aravis-0.8.35.tar.xz
     tar xf aravis-0.8.35.tar.xz && cd aravis-0.8.35
+    export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig
     meson setup build --prefix=$CONDA_PREFIX -Dgst-plugin=disabled \\
         -Dviewer=disabled -Dusb=disabled
     ninja -C build install
+
+    # On RHEL-family hosts meson installs to lib64/ — make every future
+    # shell find the library and typelib automatically:
+    mkdir -p $CONDA_PREFIX/etc/conda/activate.d
+    cat > $CONDA_PREFIX/etc/conda/activate.d/aravis.sh <<'EOF'
+    export LD_LIBRARY_PATH=$CONDA_PREFIX/lib64:$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+    export GI_TYPELIB_PATH=$CONDA_PREFIX/lib64/girepository-1.0
+    EOF
+
 Then `arv-tool-0.8` lists cameras, and this IOC runs.
 
 Usage:
