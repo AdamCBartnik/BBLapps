@@ -1,12 +1,12 @@
 """
-test_ad_backend.py — beamview's EPICSAreaDetectorCamera against a VPCam
-contract IOC (the mock driver), headless.
+test_ad_backend.py — beamview's EPICSAreaDetectorCamera against a
+standard-AD contract IOC (the camera_ioc mock), headless.
 
 This exercises the exact client/server pair that runs at the lab:
-beamview <- CA -> vpcam_launcher.py.
+beamview <- CA -> a camera_ioc-based IOC.
 
 Run from the directory containing beamview/:  python beamview/test_ad_backend.py
-(starts the mock IOC itself; requires the vpcam repo alongside, pyepics, caproto)
+(starts the mock IOC itself from the sibling camera_ioc/; needs pyepics, caproto)
 """
 
 import os
@@ -16,7 +16,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-VPCAM_IOC = os.path.join(ROOT, "vpcam", "ioc")
+CAMERA_IOC = os.path.join(ROOT, "camera_ioc")
 
 os.environ["EPICS_CA_ADDR_LIST"] = "127.0.0.1"
 os.environ["EPICS_CA_AUTO_ADDR_LIST"] = "NO"
@@ -27,11 +27,10 @@ import numpy as np
 
 
 def main():
-    env = dict(os.environ)
-    env["VPCAM_CONFIG"] = os.path.join(VPCAM_IOC, "config_mock.yaml.example")
     ioc = subprocess.Popen(
-        [sys.executable, "-u", os.path.join(VPCAM_IOC, "vpcam_launcher.py")],
-        cwd=VPCAM_IOC, env=env,
+        [sys.executable, "-u", os.path.join(CAMERA_IOC, "mock_ioc.py"),
+         "VPCAM:99", "--rate", "5"],
+        cwd=CAMERA_IOC, env=dict(os.environ),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     time.sleep(4)
 
