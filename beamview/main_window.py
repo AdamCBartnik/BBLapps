@@ -31,6 +31,11 @@ EPICS_PREFIXES = [
     "MEDUSA5", "MEDUSA6", "MEDUSA7", "MEDUSA8", "MEDUSA9",
 ]
 
+# Frame-averaging memory budget, in pixel·frames: sized so 10,000 frames of a
+# 128x128 camera are allowed (float32 buffer ≈ 655 MB). The per-shape frame
+# cap is derived from this and rounded to the nearest 100 when >= 100.
+FRAME_AVG_PX_BUDGET = 10_000 * 128 * 128
+
 
 class FrameWorker(QObject):
     """Captures frames on a background thread so the Qt event loop stays free."""
@@ -370,6 +375,12 @@ class MainWindow(QMainWindow):
         lay.addLayout(nn_row)
 
         epics_row = QHBoxLayout()
+        # MATLAB's single_frame_enable_checkbox: when off, only peak and
+        # total intensity are computed — faster display for very large images
+        self._single_frame_chk = QCheckBox("Enable Analysis")
+        self._single_frame_chk.setChecked(True)
+        self._single_frame_chk.toggled.connect(self._trigger_redraw)
+        epics_row.addWidget(self._single_frame_chk)
         self._to_epics_chk = QCheckBox("To EPICS")
         self._to_epics_chk.setChecked(True)
         epics_row.addWidget(self._to_epics_chk)
@@ -617,7 +628,7 @@ class MainWindow(QMainWindow):
         self._frame_avg_chk = QCheckBox("Frame avg:")
         self._frame_avg_chk.toggled.connect(self._trigger_redraw)
         self._frame_avg_spin = QSpinBox()
-        self._frame_avg_spin.setRange(2, 200)
+        self._frame_avg_spin.setRange(2, 10000)   # max re-clamped per frame shape
         self._frame_avg_spin.setValue(10)
         self._frame_avg_spin.setFixedWidth(45)
         self._frame_avg_reset_btn = QPushButton("Reset")
@@ -767,6 +778,18 @@ class MainWindow(QMainWindow):
 
     def _reset_frame_avg(self):
         self._frame_avg_sum = None   # forces a full buffer reset on next frame
+
+    @staticmethod
+    def _frame_avg_limit(shape) -> int:
+        """Max averaging-window frames for this frame shape, by memory budget.
+
+        Rounded to the nearest 100 when >= 100 (so 128x128 -> 10000,
+        1456x1088 -> 100); left exact below that (full-res IMX708 -> 13,
+        where nearest-100 would round to zero)."""
+        raw = max(1, int(FRAME_AVG_PX_BUDGET // (shape[0] * shape[1])))
+        if raw >= 100:
+            raw = int(round(raw / 100.0) * 100)
+        return raw
 
     # ------------------------------------------------------------------
     # Slots
@@ -1309,8 +1332,15 @@ class MainWindow(QMainWindow):
         # — no round-off accumulates).  The buffer resets when N changes, the
         # frame shape changes (ROI), or the Reset button clears the sum.
         if self._frame_avg_chk.isChecked():
-            n = self._frame_avg_spin.value()
             new = img.astype(np.float32)
+            # Cap the window by memory budget for this frame size, and keep
+            # the spinbox maximum in sync so the UI shows what's allowed
+            limit = self._frame_avg_limit(new.shape)
+            if self._frame_avg_spin.maximum() != limit:
+                self._frame_avg_spin.blockSignals(True)
+                self._frame_avg_spin.setMaximum(limit)  # clamps value if needed
+                self._frame_avg_spin.blockSignals(False)
+            n = min(self._frame_avg_spin.value(), limit)
             if (self._frame_avg_sum is None
                     or self._frame_avg_n != n
                     or self._frame_avg_sum.shape != new.shape):
@@ -1446,6 +1476,20 @@ class MainWindow(QMainWindow):
         _epics.caput(self._epics_pv(name), value, wait=False)
 
     def _update_analysis(self, img: np.ndarray, xx: np.ndarray, yy: np.ndarray):
+        # Analysis disabled: only peak and total intensity, straight off the
+        # native array (no float64 copy) — faster display for large images.
+        # Centroid/width labels keep their last values; nothing goes to EPICS.
+        if not self._single_frame_chk.isChecked():
+            peak = float(img.max())
+            pct = 100.0 * peak / self.camera.max_value
+            self._lbl_peak.setText(f"{peak:.2f}")
+            self._lbl_maxpct.setText(f"{pct:.1f} %")
+            self._lbl_maxpct.setStyleSheet(
+                "background-color: red;" if pct > 95 else ""
+            )
+            self._lbl_sum.setText(f"{float(img.sum(dtype=np.float64)):.0f}")
+            return
+
         d = img.astype(np.float64)
         total_full = d.sum()
         peak = float(d.max())
