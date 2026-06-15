@@ -85,14 +85,29 @@ class AravisDriver(CameraDriver):
         # Largest unpacked mono format the camera offers (PFNC formats are
         # right-aligned, so no bit shifting is needed on the data)
         self._bits = 8
+        selected = None
         for fmt, bits in [("Mono16", 16), ("Mono12", 12),
                           ("Mono10", 10), ("Mono8", 8)]:
             try:
                 self._cam.set_pixel_format_from_string(fmt)
                 self._bits = bits
+                selected = fmt
                 break
             except Exception:
                 continue
+        if selected is None:
+            # No unpacked mono format — a color camera, or one offering only
+            # packed mono (Mono10p etc.). This driver decodes only unpacked
+            # mono, so warn loudly with the available formats; capture() will
+            # fail-soft (skip frames) rather than stream garbage or crash.
+            try:
+                avail = self._cam.dup_available_pixel_formats_as_strings()
+            except Exception:
+                avail = ["<unavailable>"]
+            print("[aravis] WARNING: no unpacked mono format on this camera "
+                  f"(available: {', '.join(avail)}). This driver only handles "
+                  "unpacked mono (Mono8/10/12/16) — images will not decode. "
+                  "Color/packed support is not implemented.")
 
         try:
             self._cam.set_acquisition_mode(Aravis.AcquisitionMode.CONTINUOUS)
@@ -338,11 +353,28 @@ class AravisDriver(CameraDriver):
                 if started_here:
                     self._stop_stream()
 
-        if self._bits == 8:
-            img = np.frombuffer(data, dtype=np.uint8, count=w * h)
-            return img.reshape(h, w).astype(np.uint16)
-        img = np.frombuffer(data, dtype="<u2", count=w * h)
-        return np.ascontiguousarray(img.reshape(h, w))
+        # Decode fail-soft: if the buffer doesn't match an unpacked-mono
+        # w*h layout (unexpected/packed/color format), skip the frame with a
+        # throttled warning rather than letting the exception stop the
+        # acquisition loop.
+        try:
+            bytes_per_px = 1 if self._bits == 8 else 2
+            need = w * h * bytes_per_px
+            if len(data) < need:
+                raise ValueError(
+                    f"buffer {len(data)} bytes < {need} for {w}x{h} "
+                    f"Mono{self._bits}")
+            if self._bits == 8:
+                img = np.frombuffer(data, dtype=np.uint8, count=w * h)
+                return img.reshape(h, w).astype(np.uint16)
+            img = np.frombuffer(data, dtype="<u2", count=w * h)
+            return np.ascontiguousarray(img.reshape(h, w))
+        except Exception as e:
+            self._decode_errors = getattr(self, "_decode_errors", 0) + 1
+            if self._decode_errors <= 3:
+                print(f"[aravis] frame decode failed ({e}); skipping. "
+                      "Wrong pixel format for this driver?")
+            return None
 
     def close(self):
         try:
