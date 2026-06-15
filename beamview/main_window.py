@@ -720,25 +720,33 @@ class MainWindow(QMainWindow):
     def _build_sw_roi_group(self, parent):
         lay = self._bottom_group("Software ROI", parent)
 
-        row = QHBoxLayout()
+        row1 = QHBoxLayout()
         self._sw_roi_chk = QCheckBox("Enable")
         self._sw_roi_chk.toggled.connect(self._on_sw_roi_toggle)
-        row.addWidget(self._sw_roi_chk)
+        row1.addWidget(self._sw_roi_chk)
         self._sw_roi_type_combo = QComboBox()
         self._sw_roi_type_combo.addItems(
             ["Rectangle", "Circle", "Ellipse", "Polygon"])
         self._sw_roi_type_combo.currentTextChanged.connect(
             self._on_sw_roi_type_changed)
-        row.addWidget(self._sw_roi_type_combo)
+        row1.addWidget(self._sw_roi_type_combo)
+        row1.addStretch()
+        lay.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        self._sw_roi_show_chk = QCheckBox("Show")
+        self._sw_roi_show_chk.setChecked(True)
+        self._sw_roi_show_chk.toggled.connect(self._on_sw_roi_show_toggle)
+        row2.addWidget(self._sw_roi_show_chk)
         self._sw_roi_invert_chk = QCheckBox("Invert")
         self._sw_roi_invert_chk.toggled.connect(self._on_sw_roi_changed)
-        row.addWidget(self._sw_roi_invert_chk)
-        lay.addLayout(row)
-
-        hint = QLabel("Drag/resize the shape on the image;\n"
-                      "pixels outside it are zeroed (Invert flips).")
-        hint.setStyleSheet("color: gray; font-size: 10px;")
-        lay.addWidget(hint)
+        row2.addWidget(self._sw_roi_invert_chk)
+        self._sw_roi_reset_btn = QPushButton("Reset")
+        self._sw_roi_reset_btn.setFixedWidth(50)
+        self._sw_roi_reset_btn.clicked.connect(self._on_sw_roi_reset)
+        row2.addWidget(self._sw_roi_reset_btn)
+        row2.addStretch()
+        lay.addLayout(row2)
 
     def _build_colormap_group(self, parent):
         lay = self._bottom_group("Colormap", parent)
@@ -1411,8 +1419,10 @@ class MainWindow(QMainWindow):
                 cutoff = thresh_val
             img = np.where(img >= cutoff, img, 0).astype(np.uint16)
 
-        # Software ROI mask — zero pixels outside the drawn box (MATLAB: data(roi)=0)
-        if self._sw_roi is not None:
+        # Software ROI mask — zero pixels outside the shape (MATLAB: data(roi)=0).
+        # Applied only when Enabled; the widget may persist (hidden/shown)
+        # independently so its geometry is remembered across enable toggles.
+        if self._sw_roi is not None and self._sw_roi_chk.isChecked():
             mxx, myy, _ = self._get_display_xy(img.shape[0], img.shape[1])
             img = self._apply_sw_roi(img, mxx, myy)
 
@@ -1490,19 +1500,45 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_sw_roi_toggle(self, on: bool):
-        """Add/remove the draggable ROI shape, then redraw with the mask."""
-        if on and self._sw_roi is None:
-            self._create_sw_roi()
-        elif not on and self._sw_roi is not None:
+        """Enable/disable masking. The shape widget persists across toggles so
+        its geometry is remembered; only its visibility and whether the mask
+        is applied change."""
+        if on:
+            self._ensure_sw_roi()
+        self._update_sw_roi_visibility()
+        self._on_sw_roi_changed()
+
+    def _on_sw_roi_show_toggle(self, on: bool):
+        """Show/hide the outline without affecting whether the mask applies."""
+        if on:
+            self._ensure_sw_roi()
+        self._update_sw_roi_visibility()
+
+    def _on_sw_roi_reset(self):
+        """Re-center/re-size the current shape to its default geometry."""
+        if self._sw_roi is not None:
             self._destroy_sw_roi()
+        self._create_sw_roi()
+        self._update_sw_roi_visibility()
         self._on_sw_roi_changed()
 
     def _on_sw_roi_type_changed(self, *_):
-        """Swap the shape widget for the newly-selected type, if enabled."""
+        """Swap the shape widget for the newly-selected type (geometry can't
+        carry across types), preserving enable/show state."""
         if self._sw_roi is not None:
             self._destroy_sw_roi()
             self._create_sw_roi()
+            self._update_sw_roi_visibility()
             self._on_sw_roi_changed()
+
+    def _ensure_sw_roi(self):
+        if self._sw_roi is None:
+            self._create_sw_roi()
+
+    def _update_sw_roi_visibility(self):
+        """Outline is visible only when it exists and Show is checked."""
+        if self._sw_roi is not None:
+            self._sw_roi.setVisible(self._sw_roi_show_chk.isChecked())
 
     def _create_sw_roi(self):
         """Make the draggable shape for the current type over the middle of
