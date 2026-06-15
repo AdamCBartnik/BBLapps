@@ -1515,10 +1515,15 @@ class MainWindow(QMainWindow):
         self._update_sw_roi_visibility()
 
     def _on_sw_roi_reset(self):
-        """Re-center/re-size the current shape to its default geometry."""
-        if self._sw_roi is not None:
-            self._destroy_sw_roi()
-        self._create_sw_roi()
+        """Restore the current shape to its default geometry.
+
+        Done in place via setState (not destroy/recreate): removeItem on a
+        rotated ROI leaves a ghost outline until the next repaint, which made
+        reset appear to need two clicks."""
+        if self._sw_roi is None:
+            self._create_sw_roi()
+        else:
+            self._sw_roi.setState(self._sw_roi_default_state)
         self._update_sw_roi_visibility()
         self._on_sw_roi_changed()
 
@@ -1566,6 +1571,8 @@ class MainWindow(QMainWindow):
 
         self._sw_roi = roi
         self._sw_roi_type = t
+        # Remember the default geometry so Reset can restore it in place
+        self._sw_roi_default_state = roi.getState()
         self._plot.addItem(roi)
         roi.sigRegionChanged.connect(self._on_sw_roi_changed)
 
