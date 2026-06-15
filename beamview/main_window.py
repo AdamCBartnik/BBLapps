@@ -105,6 +105,7 @@ class MainWindow(QMainWindow):
         self._last_analysis_yy:  np.ndarray | None = None
         self._zoom_start = None
         self._first_frame = True
+        self._sw_roi = None   # pyqtgraph ROI widget when software ROI enabled
         # Last exposure/gain values written to (or read back from) the
         # camera, used to suppress no-op writes from editingFinished firing
         # on mere focus changes
@@ -217,6 +218,7 @@ class MainWindow(QMainWindow):
         self._build_camera_info_group(bottom)
         self._build_data_processing_group(bottom)
         self._build_roi_group(bottom)
+        self._build_sw_roi_group(bottom)
         self._build_colormap_group(bottom)
         bottom.addStretch()
 
@@ -710,6 +712,22 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._zoom_btn, 1, 4)
 
         lay.addLayout(grid)
+
+    def _build_sw_roi_group(self, parent):
+        lay = self._bottom_group("Software ROI", parent)
+
+        row = QHBoxLayout()
+        self._sw_roi_chk = QCheckBox("Enable")
+        self._sw_roi_chk.toggled.connect(self._on_sw_roi_toggle)
+        row.addWidget(self._sw_roi_chk)
+        self._sw_roi_invert_chk = QCheckBox("Invert")
+        self._sw_roi_invert_chk.toggled.connect(self._on_sw_roi_changed)
+        row.addWidget(self._sw_roi_invert_chk)
+        lay.addLayout(row)
+
+        hint = QLabel("Drag the box on the image;\npixels outside are zeroed.")
+        hint.setStyleSheet("color: gray; font-size: 10px;")
+        lay.addWidget(hint)
 
     def _build_colormap_group(self, parent):
         lay = self._bottom_group("Colormap", parent)
@@ -1382,6 +1400,11 @@ class MainWindow(QMainWindow):
                 cutoff = thresh_val
             img = np.where(img >= cutoff, img, 0).astype(np.uint16)
 
+        # Software ROI mask — zero pixels outside the drawn box (MATLAB: data(roi)=0)
+        if self._sw_roi is not None:
+            mxx, myy, _ = self._get_display_xy(img.shape[0], img.shape[1])
+            img = self._apply_sw_roi(img, mxx, myy)
+
         # Log transform (applied before range logic, matching MATLAB: log10(1 + |data|))
         if self._log_plot_chk.isChecked():
             display_img = np.log10(1.0 + np.abs(img.astype(np.float32)))
@@ -1450,6 +1473,44 @@ class MainWindow(QMainWindow):
             self._last_analysis_img, self._last_analysis_xx, self._last_analysis_yy
         )
         self._update_analysis(ci, cx_arr, cy_arr)
+
+    # ------------------------------------------------------------------
+    # Software ROI (interactive mask)
+    # ------------------------------------------------------------------
+
+    def _on_sw_roi_toggle(self, on: bool):
+        """Add/remove the draggable ROI box, then redraw with the mask."""
+        if on and self._sw_roi is None:
+            # Place the box over the middle half of the current view
+            (vx0, vx1), (vy0, vy1) = self._plot.vb.viewRange()
+            w, h = (vx1 - vx0), (vy1 - vy0)
+            self._sw_roi = pg.RectROI(
+                [vx0 + 0.25 * w, vy0 + 0.25 * h], [0.5 * w, 0.5 * h],
+                pen=pg.mkPen('r', width=2))
+            self._sw_roi.addScaleHandle([0, 0], [1, 1])  # opposite-corner resize
+            self._plot.addItem(self._sw_roi)
+            self._sw_roi.sigRegionChanged.connect(self._on_sw_roi_changed)
+        elif not on and self._sw_roi is not None:
+            self._plot.removeItem(self._sw_roi)
+            self._sw_roi = None
+        self._on_sw_roi_changed()
+
+    def _on_sw_roi_changed(self, *_):
+        """Re-apply the mask to the last frame when paused; live frames pick it
+        up on the next tick."""
+        if not self._timer.isActive() and getattr(self, "_last_raw", None) is not None:
+            self._process_and_display(self._last_raw)
+
+    def _apply_sw_roi(self, img: np.ndarray, xx: np.ndarray, yy: np.ndarray):
+        """Zero pixels outside the ROI box (or inside, if Invert). Operates in
+        display coordinates via xx/yy, so it works in pixel and physical units."""
+        pos, size = self._sw_roi.pos(), self._sw_roi.size()
+        x0, x1 = sorted((pos.x(), pos.x() + size.x()))
+        y0, y1 = sorted((pos.y(), pos.y() + size.y()))
+        inside = np.outer((yy >= y0) & (yy <= y1), (xx >= x0) & (xx <= x1))
+        if self._sw_roi_invert_chk.isChecked():
+            inside = ~inside
+        return np.where(inside, img, 0).astype(img.dtype)
 
     def _apply_sgauss(self, img: np.ndarray, mean_param: int, p: float) -> np.ndarray:
         """Super-gaussian smoothing kernel, matching MATLAB source/make_plot.m."""
