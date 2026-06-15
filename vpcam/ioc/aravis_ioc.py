@@ -110,6 +110,10 @@ class AravisDriver(CameraDriver):
         self._sensor_w, self._sensor_h = self._cam.get_sensor_size()
         self._stream = None
         self._streaming = False
+        # Auto-recovery state: GigE streams occasionally wedge into a state
+        # where every buffer comes back failed; a stream restart clears it.
+        self._consec_errors = 0
+        self._last_restart = 0.0
         # Aravis calls are serialized: the acquisition loop and PV putters
         # run on different worker threads
         self._lock = threading.Lock()
@@ -140,19 +144,14 @@ class AravisDriver(CameraDriver):
                 print(f"[aravis] {label}: not set ({e})")
 
         # ExposureMode must be Timed for ExposureTime to apply (some cameras
-        # default to TriggerWidth etc.); AcquisitionFrameRateEnable=false lifts
-        # the frame-period cap on long exposures. Generic-node, best-effort.
+        # default to TriggerWidth etc.); TriggerMode off = free-running.
+        # The frame-period cap on long exposures is handled in the exposure
+        # setter via set_frame_rate, not here. Generic-node, best-effort.
         dev = self._cam.get_device()
-        for feature, value, kind in [
-            ("ExposureMode", "Timed", "str"),
-            ("AcquisitionFrameRateEnable", False, "bool"),
-            ("TriggerMode", "Off", "str"),
-        ]:
+        for feature, value in [("ExposureMode", "Timed"),
+                               ("TriggerMode", "Off")]:
             try:
-                if kind == "str":
-                    dev.set_string_feature_value(feature, value)
-                else:
-                    dev.set_boolean_feature_value(feature, value)
+                dev.set_string_feature_value(feature, value)
             except Exception:
                 pass  # feature absent on this model — fine
 
@@ -204,9 +203,21 @@ class AravisDriver(CameraDriver):
     def exposure_time(self, seconds: float):
         with self._lock:
             us = seconds * 1e6
+            # A camera can't expose longer than its frame period, so the
+            # exposure max is bounded by the frame rate. Set the hardware
+            # frame rate to fit the requested exposure (5% overhead), capped
+            # at the camera's max rate so short exposures still run fast.
+            # set_frame_rate enables frame-rate control internally and is
+            # vendor-aware (better than poking AcquisitionFrameRateEnable).
             try:
-                # Clamp to the camera's allowed range — an out-of-bounds
-                # write is the other way exposure silently doesn't change
+                _fr_min, fr_max = self._cam.get_frame_rate_bounds()
+                target = fr_max if us <= 0 else min(fr_max, 1e6 / (us * 1.05))
+                target = max(_fr_min, target)
+                self._cam.set_frame_rate(target)
+            except Exception as e:
+                print(f"[aravis] frame-rate for exposure: {e}")
+            # Now bounds reflect the new frame rate; clamp into them
+            try:
                 mn, mx = self._cam.get_exposure_time_bounds()
                 us = max(mn, min(mx, us))
             except Exception:
@@ -257,6 +268,20 @@ class AravisDriver(CameraDriver):
         self._stream = None   # buffers are owned by the stream; let it go
         self._streaming = False
 
+    def _restart_stream(self):
+        """Tear down and recreate the stream (call with lock held).
+
+        Recovery for the GigE failure mode where every buffer comes back
+        with a non-success status until acquisition is cycled — the same
+        stop/start a user would do by hand, done automatically."""
+        import time
+        self._stop_stream()
+        time.sleep(0.2)
+        self._start_stream()
+        self._last_restart = time.time()
+        self._consec_errors = 0
+        print("[aravis] stream restarted (auto-recovery)")
+
     def on_acquire_start(self):
         with self._lock:
             if not self._streaming:
@@ -286,16 +311,29 @@ class AravisDriver(CameraDriver):
                     self._stream.push_buffer(buf)
                     buf = nxt
 
-                try:
-                    if buf.get_status() != Aravis.BufferStatus.SUCCESS:
-                        print(f"[aravis] buffer status {buf.get_status()}; "
-                              "skipping frame")
-                        return None
+                status = buf.get_status()
+                if status != Aravis.BufferStatus.SUCCESS:
+                    w = h = 0
+                else:
+                    self._consec_errors = 0
                     w = int(buf.get_image_width())
                     h = int(buf.get_image_height())
                     data = buf.get_data()   # bytes, copied by pygobject
-                finally:
-                    self._stream.push_buffer(buf)
+                # Return the buffer to its own stream BEFORE any restart, so
+                # we never push a stale buffer onto a freshly-recreated stream
+                self._stream.push_buffer(buf)
+
+                if status != Aravis.BufferStatus.SUCCESS:
+                    self._consec_errors += 1
+                    if self._consec_errors <= 3:   # don't spam a long run
+                        print(f"[aravis] buffer status {status}; skipping frame")
+                    # Sustained failure + not just-restarted -> auto-recover.
+                    # ~30 consecutive bad buffers, at most one restart/10 s.
+                    import time
+                    if (self._consec_errors >= 30 and
+                            time.time() - self._last_restart > 10.0):
+                        self._restart_stream()
+                    return None
             finally:
                 if started_here:
                     self._stop_stream()
