@@ -217,8 +217,12 @@ class MainWindow(QMainWindow):
 
         self._build_camera_info_group(bottom)
         self._build_data_processing_group(bottom)
-        self._build_roi_group(bottom)
-        self._build_sw_roi_group(bottom)
+        # Software ROI stacked above the hardware ROI in one column
+        roi_col = QVBoxLayout()
+        roi_col.setSpacing(4)
+        self._build_sw_roi_group(roi_col)
+        self._build_roi_group(roi_col)
+        bottom.addLayout(roi_col)
         self._build_colormap_group(bottom)
         bottom.addStretch()
 
@@ -720,12 +724,19 @@ class MainWindow(QMainWindow):
         self._sw_roi_chk = QCheckBox("Enable")
         self._sw_roi_chk.toggled.connect(self._on_sw_roi_toggle)
         row.addWidget(self._sw_roi_chk)
+        self._sw_roi_type_combo = QComboBox()
+        self._sw_roi_type_combo.addItems(
+            ["Rectangle", "Circle", "Ellipse", "Polygon"])
+        self._sw_roi_type_combo.currentTextChanged.connect(
+            self._on_sw_roi_type_changed)
+        row.addWidget(self._sw_roi_type_combo)
         self._sw_roi_invert_chk = QCheckBox("Invert")
         self._sw_roi_invert_chk.toggled.connect(self._on_sw_roi_changed)
         row.addWidget(self._sw_roi_invert_chk)
         lay.addLayout(row)
 
-        hint = QLabel("Drag the box on the image;\npixels outside are zeroed.")
+        hint = QLabel("Drag/resize the shape on the image;\n"
+                      "pixels outside it are zeroed (Invert flips).")
         hint.setStyleSheet("color: gray; font-size: 10px;")
         lay.addWidget(hint)
 
@@ -1479,21 +1490,52 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_sw_roi_toggle(self, on: bool):
-        """Add/remove the draggable ROI box, then redraw with the mask."""
+        """Add/remove the draggable ROI shape, then redraw with the mask."""
         if on and self._sw_roi is None:
-            # Place the box over the middle half of the current view
-            (vx0, vx1), (vy0, vy1) = self._plot.vb.viewRange()
-            w, h = (vx1 - vx0), (vy1 - vy0)
-            self._sw_roi = pg.RectROI(
-                [vx0 + 0.25 * w, vy0 + 0.25 * h], [0.5 * w, 0.5 * h],
-                pen=pg.mkPen('r', width=2))
-            self._sw_roi.addScaleHandle([0, 0], [1, 1])  # opposite-corner resize
-            self._plot.addItem(self._sw_roi)
-            self._sw_roi.sigRegionChanged.connect(self._on_sw_roi_changed)
+            self._create_sw_roi()
         elif not on and self._sw_roi is not None:
-            self._plot.removeItem(self._sw_roi)
-            self._sw_roi = None
+            self._destroy_sw_roi()
         self._on_sw_roi_changed()
+
+    def _on_sw_roi_type_changed(self, *_):
+        """Swap the shape widget for the newly-selected type, if enabled."""
+        if self._sw_roi is not None:
+            self._destroy_sw_roi()
+            self._create_sw_roi()
+            self._on_sw_roi_changed()
+
+    def _create_sw_roi(self):
+        """Make the draggable shape for the current type over the middle of
+        the view, and remember its type for masking."""
+        (vx0, vx1), (vy0, vy1) = self._plot.vb.viewRange()
+        w, h = (vx1 - vx0), (vy1 - vy0)
+        cx, cy = vx0 + 0.5 * w, vy0 + 0.5 * h
+        bw, bh = 0.5 * w, 0.5 * h          # shape half the view
+        corner = [cx - 0.5 * bw, cy - 0.5 * bh]
+        pen = pg.mkPen('r', width=2)
+        t = self._sw_roi_type_combo.currentText()
+
+        if t == "Rectangle":
+            roi = pg.RectROI(corner, [bw, bh], pen=pen)
+        elif t == "Circle":
+            d = 0.5 * min(w, h)
+            roi = pg.CircleROI([cx - 0.5 * d, cy - 0.5 * d], [d, d], pen=pen)
+        elif t == "Ellipse":
+            roi = pg.EllipseROI(corner, [bw, bh], pen=pen)
+            roi.addRotateHandle([1, 0], [0.5, 0.5])   # tilt about the center
+        else:  # Polygon — start as a quad the user can reshape/extend
+            pts = [[cx - 0.5 * bw, cy - 0.5 * bh], [cx + 0.5 * bw, cy - 0.5 * bh],
+                   [cx + 0.5 * bw, cy + 0.5 * bh], [cx - 0.5 * bw, cy + 0.5 * bh]]
+            roi = pg.PolyLineROI(pts, closed=True, pen=pen)
+
+        self._sw_roi = roi
+        self._sw_roi_type = t
+        self._plot.addItem(roi)
+        roi.sigRegionChanged.connect(self._on_sw_roi_changed)
+
+    def _destroy_sw_roi(self):
+        self._plot.removeItem(self._sw_roi)
+        self._sw_roi = None
 
     def _on_sw_roi_changed(self, *_):
         """Re-apply the mask to the last frame when paused; live frames pick it
@@ -1501,13 +1543,53 @@ class MainWindow(QMainWindow):
         if not self._timer.isActive() and getattr(self, "_last_raw", None) is not None:
             self._process_and_display(self._last_raw)
 
+    @staticmethod
+    def _points_in_poly(X, Y, vx, vy):
+        """Vectorized even-odd point-in-polygon over a coordinate grid."""
+        inside = np.zeros(X.shape, dtype=bool)
+        n = len(vx)
+        j = n - 1
+        with np.errstate(invalid="ignore", divide="ignore"):
+            for i in range(n):
+                crosses = (vy[i] > Y) != (vy[j] > Y)
+                xcut = (vx[j] - vx[i]) * (Y - vy[i]) / (vy[j] - vy[i]) + vx[i]
+                inside ^= crosses & (X < xcut)
+                j = i
+        return inside
+
     def _apply_sw_roi(self, img: np.ndarray, xx: np.ndarray, yy: np.ndarray):
-        """Zero pixels outside the ROI box (or inside, if Invert). Operates in
-        display coordinates via xx/yy, so it works in pixel and physical units."""
-        pos, size = self._sw_roi.pos(), self._sw_roi.size()
-        x0, x1 = sorted((pos.x(), pos.x() + size.x()))
-        y0, y1 = sorted((pos.y(), pos.y() + size.y()))
-        inside = np.outer((yy >= y0) & (yy <= y1), (xx >= x0) & (xx <= x1))
+        """Zero pixels outside the ROI shape (or inside, if Invert). Works in
+        display coords via xx/yy, so pixel/physical units and the y-flip are
+        all handled. For rotated ellipses, masking uses the same affine the
+        widget applies: data = pos + R(angle)·local."""
+        roi = self._sw_roi
+        t = self._sw_roi_type
+        X, Y = np.meshgrid(xx, yy)
+
+        if t == "Rectangle":
+            pos, size = roi.pos(), roi.size()
+            x0, x1 = sorted((pos.x(), pos.x() + size.x()))
+            y0, y1 = sorted((pos.y(), pos.y() + size.y()))
+            inside = (X >= x0) & (X <= x1) & (Y >= y0) & (Y <= y1)
+        elif t in ("Circle", "Ellipse"):
+            pos, size = roi.pos(), roi.size()
+            w, h = size.x(), size.y()
+            ang = np.radians(roi.angle()) if t == "Ellipse" else 0.0
+            c, s = np.cos(ang), np.sin(ang)
+            dx, dy = X - pos.x(), Y - pos.y()
+            lx = c * dx + s * dy        # into the shape's local (unrotated) frame
+            ly = -s * dx + c * dy
+            nx = (lx - 0.5 * w) / (0.5 * w)
+            ny = (ly - 0.5 * h) / (0.5 * h)
+            inside = nx * nx + ny * ny <= 1.0
+        elif t == "Polygon":
+            verts = [roi.mapToParent(pg.Point(p)) for p in roi.getState()["points"]]
+            vx = np.array([p.x() for p in verts])
+            vy = np.array([p.y() for p in verts])
+            inside = self._points_in_poly(X, Y, vx, vy)
+        else:
+            return img
+
         if self._sw_roi_invert_chk.isChecked():
             inside = ~inside
         return np.where(inside, img, 0).astype(img.dtype)
