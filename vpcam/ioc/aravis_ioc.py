@@ -105,6 +105,8 @@ class AravisDriver(CameraDriver):
         except Exception:
             pass
 
+        self._apply_startup_defaults()
+
         self._sensor_w, self._sensor_h = self._cam.get_sensor_size()
         self._stream = None
         self._streaming = False
@@ -114,6 +116,53 @@ class AravisDriver(CameraDriver):
 
         print(f"[aravis] connected: {self.manufacturer} {self.model}, "
               f"{self._sensor_w}x{self._sensor_h}, Mono{self._bits}")
+
+    def _apply_startup_defaults(self):
+        """Put the camera in plain manual-exposure mode.
+
+        Without this, a camera left in auto-exposure (ExposureAuto =
+        Continuous) silently ignores ExposureTime writes — the classic
+        "can't change the exposure" symptom.  We also disable auto gain and,
+        where present, the frame-rate cap that would otherwise limit the
+        maximum exposure time.  Everything is best-effort: features vary by
+        vendor, and a missing one just means it didn't need setting.
+        """
+        Aravis = self._Aravis
+
+        # Auto exposure / gain off (high-level API maps to the right node)
+        for label, fn, arg in [
+            ("exposure auto", self._cam.set_exposure_time_auto, Aravis.Auto.OFF),
+            ("gain auto", self._cam.set_gain_auto, Aravis.Auto.OFF),
+        ]:
+            try:
+                fn(arg)
+            except Exception as e:
+                print(f"[aravis] {label}: not set ({e})")
+
+        # ExposureMode must be Timed for ExposureTime to apply (some cameras
+        # default to TriggerWidth etc.); AcquisitionFrameRateEnable=false lifts
+        # the frame-period cap on long exposures. Generic-node, best-effort.
+        dev = self._cam.get_device()
+        for feature, value, kind in [
+            ("ExposureMode", "Timed", "str"),
+            ("AcquisitionFrameRateEnable", False, "bool"),
+            ("TriggerMode", "Off", "str"),
+        ]:
+            try:
+                if kind == "str":
+                    dev.set_string_feature_value(feature, value)
+                else:
+                    dev.set_boolean_feature_value(feature, value)
+            except Exception:
+                pass  # feature absent on this model — fine
+
+        try:
+            exp = self._cam.get_exposure_time()
+            mn, mx = self._cam.get_exposure_time_bounds()
+            print(f"[aravis] manual exposure mode: {exp:.0f} us "
+                  f"(range {mn:.0f}-{mx:.0f} us)")
+        except Exception:
+            pass
 
     # -- geometry ----------------------------------------------------------------
 
@@ -154,8 +203,16 @@ class AravisDriver(CameraDriver):
     @exposure_time.setter
     def exposure_time(self, seconds: float):
         with self._lock:
+            us = seconds * 1e6
             try:
-                self._cam.set_exposure_time(seconds * 1e6)
+                # Clamp to the camera's allowed range — an out-of-bounds
+                # write is the other way exposure silently doesn't change
+                mn, mx = self._cam.get_exposure_time_bounds()
+                us = max(mn, min(mx, us))
+            except Exception:
+                pass
+            try:
+                self._cam.set_exposure_time(us)
             except Exception as e:
                 print(f"[aravis] exposure: {e}")
 
