@@ -154,12 +154,17 @@ class EPICSAreaDetectorCamera(CameraBase):
         return False
 
     def set_roi(self, x: int, y: int, w: int, h: int):
-        """ROI records apply immediately; the IOC clamps out-of-range values.
-        Offsets first so the sizes are clamped against the new origin."""
-        epics.caput(self._prefix + ":cam1:MinX", int(x), wait=True)
-        epics.caput(self._prefix + ":cam1:MinY", int(y), wait=True)
-        epics.caput(self._prefix + ":cam1:SizeX", int(w), wait=True)
-        epics.caput(self._prefix + ":cam1:SizeY", int(h), wait=True)
+        """Set the hardware ROI, ordered to avoid the areaDetector offset-clamp
+        trap: setting MinX while the old SizeX is still large makes the camera
+        clamp the offset (often to 0). So zero the offsets first, then set the
+        sizes, then the offsets — every intermediate state stays in range."""
+        p = self._prefix
+        epics.caput(p + ":cam1:MinX", 0, wait=True)
+        epics.caput(p + ":cam1:MinY", 0, wait=True)
+        epics.caput(p + ":cam1:SizeX", int(w), wait=True)
+        epics.caput(p + ":cam1:SizeY", int(h), wait=True)
+        epics.caput(p + ":cam1:MinX", int(x), wait=True)
+        epics.caput(p + ":cam1:MinY", int(y), wait=True)
 
     def get_roi(self) -> tuple:
         return (
