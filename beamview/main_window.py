@@ -106,6 +106,7 @@ class MainWindow(QMainWindow):
         self._zoom_start = None
         self._first_frame = True
         self._sw_roi = None   # pyqtgraph ROI widget when software ROI enabled
+        self._sw_roi_states = {}   # per-type remembered geometry across switches
         # Last exposure/gain values written to (or read back from) the
         # camera, used to suppress no-op writes from editingFinished firing
         # on mere focus changes
@@ -1515,24 +1516,24 @@ class MainWindow(QMainWindow):
         self._update_sw_roi_visibility()
 
     def _on_sw_roi_reset(self):
-        """Restore the current shape to its default geometry.
-
-        Done in place via setState (not destroy/recreate): removeItem on a
-        rotated ROI leaves a ghost outline until the next repaint, which made
-        reset appear to need two clicks."""
+        """Restore the current shape to a sensible default for the CURRENT
+        view (so reset tracks zoom/hardware-ROI), in place to avoid the
+        rotated-ROI removeItem ghost."""
         if self._sw_roi is None:
             self._create_sw_roi()
         else:
-            self._sw_roi.setState(self._sw_roi_default_state)
+            self._apply_default_geometry(self._sw_roi, self._sw_roi_type)
+            self._sw_roi_states[self._sw_roi_type] = self._sw_roi.getState()
         self._update_sw_roi_visibility()
         self._on_sw_roi_changed()
 
     def _on_sw_roi_type_changed(self, *_):
-        """Swap the shape widget for the newly-selected type (geometry can't
-        carry across types), preserving enable/show state."""
+        """Swap the shape widget for the newly-selected type, remembering the
+        old type's geometry and restoring the new type's if seen before."""
         if self._sw_roi is not None:
+            self._sw_roi_states[self._sw_roi_type] = self._sw_roi.getState()
             self._destroy_sw_roi()
-            self._create_sw_roi()
+            self._create_sw_roi()   # restores remembered geometry if any
             self._update_sw_roi_visibility()
             self._on_sw_roi_changed()
 
@@ -1545,36 +1546,63 @@ class MainWindow(QMainWindow):
         if self._sw_roi is not None:
             self._sw_roi.setVisible(self._sw_roi_show_chk.isChecked())
 
-    def _create_sw_roi(self):
-        """Make the draggable shape for the current type over the middle of
-        the view, and remember its type for masking."""
+    def _default_geom(self, t: str) -> dict:
+        """Default geometry for ROI type `t` centered on the current view."""
         (vx0, vx1), (vy0, vy1) = self._plot.vb.viewRange()
         w, h = (vx1 - vx0), (vy1 - vy0)
         cx, cy = vx0 + 0.5 * w, vy0 + 0.5 * h
         bw, bh = 0.5 * w, 0.5 * h          # shape half the view
-        corner = [cx - 0.5 * bw, cy - 0.5 * bh]
-        pen = pg.mkPen('r', width=2)
+        if t == "Circle":
+            d = 0.5 * min(w, h)
+            return {"pos": [cx - 0.5 * d, cy - 0.5 * d], "size": [d, d]}
+        if t == "Polygon":
+            return {"points": [[cx - 0.5 * bw, cy - 0.5 * bh],
+                               [cx + 0.5 * bw, cy - 0.5 * bh],
+                               [cx + 0.5 * bw, cy + 0.5 * bh],
+                               [cx - 0.5 * bw, cy + 0.5 * bh]]}
+        return {"pos": [cx - 0.5 * bw, cy - 0.5 * bh], "size": [bw, bh]}
+
+    def _apply_default_geometry(self, roi, t: str):
+        """Set an existing widget to the default geometry for the current view."""
+        g = self._default_geom(t)
+        try:
+            roi.setAngle(0)
+        except Exception:
+            pass
+        if t == "Polygon":
+            roi.setPoints(g["points"])
+        else:
+            roi.setSize(g["size"])
+            roi.setPos(g["pos"])
+
+    def _create_sw_roi(self):
+        """Make the draggable shape for the current type, restoring this type's
+        remembered geometry if it has one, else a default for the current view."""
         t = self._sw_roi_type_combo.currentText()
+        g = self._default_geom(t)
+        pen = pg.mkPen('r', width=2)
 
         if t == "Rectangle":
-            roi = pg.RectROI(corner, [bw, bh], pen=pen)
+            roi = pg.RectROI(g["pos"], g["size"], pen=pen)
         elif t == "Circle":
-            d = 0.5 * min(w, h)
-            roi = pg.CircleROI([cx - 0.5 * d, cy - 0.5 * d], [d, d], pen=pen)
+            roi = pg.CircleROI(g["pos"], g["size"], pen=pen)
         elif t == "Ellipse":
-            roi = pg.EllipseROI(corner, [bw, bh], pen=pen)
+            roi = pg.EllipseROI(g["pos"], g["size"], pen=pen)
             roi.addRotateHandle([1, 0], [0.5, 0.5])   # tilt about the center
         else:  # Polygon — start as a quad the user can reshape/extend
-            pts = [[cx - 0.5 * bw, cy - 0.5 * bh], [cx + 0.5 * bw, cy - 0.5 * bh],
-                   [cx + 0.5 * bw, cy + 0.5 * bh], [cx - 0.5 * bw, cy + 0.5 * bh]]
-            roi = pg.PolyLineROI(pts, closed=True, pen=pen)
+            roi = pg.PolyLineROI(g["points"], closed=True, pen=pen)
 
         self._sw_roi = roi
         self._sw_roi_type = t
-        # Remember the default geometry so Reset can restore it in place
-        self._sw_roi_default_state = roi.getState()
         self._plot.addItem(roi)
         roi.sigRegionChanged.connect(self._on_sw_roi_changed)
+        # Restore this type's last geometry if we've used it before
+        remembered = self._sw_roi_states.get(t)
+        if remembered is not None:
+            try:
+                roi.setState(remembered)
+            except Exception:
+                pass
 
     def _destroy_sw_roi(self):
         self._plot.removeItem(self._sw_roi)
