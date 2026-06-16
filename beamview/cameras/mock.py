@@ -111,4 +111,6 @@ class MockCamera(CameraBase):
         else:   # Normal = sum of both
             out = hot + cold
 
-        return np.clip(out, 0, self.max_value).astype(np.uint16)
+        # Signed output (like the real detector's doubles) so Diff keeps its
+        # negative values — lets the "Allow Negative" path be exercised.
+        return np.clip(out, -self.max_value, self.max_value).astype(np.int32)
