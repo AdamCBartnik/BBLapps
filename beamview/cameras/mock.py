@@ -9,7 +9,7 @@ class MockCamera(CameraBase):
     Useful for UI development without a real EPICS connection.
     """
 
-    def __init__(self, width=640, height=480, bits=12):
+    def __init__(self, width=1000, height=1000, bits=12):
         self._width_max = width
         self._height_max = height
         self._width = width

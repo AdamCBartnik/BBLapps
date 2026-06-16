@@ -1380,6 +1380,11 @@ class MainWindow(QMainWindow):
         self._process_and_display(img)
 
     def _process_and_display(self, img: np.ndarray):
+        # Work in float32 throughout (like MATLAB's double, but half the memory
+        # and exact for all integer pixel values). This keeps negatives and
+        # fractional values intact through the filters; sums in the analysis
+        # use float64. float32 is exact for integers below 2^24.
+        img = np.asarray(img, dtype=np.float32)
         self._last_raw = img
 
         # Update exposure display from camera readback, but not while the user is editing it
@@ -1397,15 +1402,15 @@ class MainWindow(QMainWindow):
         # Background subtraction
         if self._subtract_bg_chk.isChecked() and self._bg_image is not None:
             if self._bg_image.shape == img.shape:
-                diff = img.astype(np.int32) - self._bg_image.astype(np.int32)
+                diff = img - self._bg_image.astype(np.float32)
                 if not self._allow_neg_chk.isChecked():
                     diff = np.clip(diff, 0, None)
-                img = diff.astype(np.float32)
+                img = diff
 
         # Median filter
         if self._median_chk.isChecked():
             from scipy.ndimage import median_filter
-            img = median_filter(img, size=self._median_spin.value()).astype(np.uint16)
+            img = median_filter(img, size=self._median_spin.value())
 
         # Super-gaussian smoothing
         if self._sgauss_chk.isChecked():
@@ -1446,7 +1451,7 @@ class MainWindow(QMainWindow):
             self._frame_avg_buffer[i] = new
             self._frame_avg_sum += new
             self._frame_avg_index = (i + 1) % n
-            img = (self._frame_avg_sum / self._frame_avg_count).astype(np.uint16)
+            img = (self._frame_avg_sum / self._frame_avg_count).astype(np.float32)
             self._frame_avg_count_lbl.setText(f"{self._frame_avg_count} / {n}")
         else:
             self._frame_avg_count_lbl.setText("—")
@@ -1456,10 +1461,7 @@ class MainWindow(QMainWindow):
             angle = self._rotate_angle_spin.value()
             if angle != 0.0:
                 from scipy.ndimage import rotate as _rotate
-                img = np.clip(
-                    _rotate(img.astype(np.float32), angle, reshape=False, order=1),
-                    0, np.iinfo(np.uint16).max
-                ).astype(np.uint16)
+                img = _rotate(img, angle, reshape=False, order=1).astype(np.float32)
 
         # Threshold
         if self._threshold_chk.isChecked():
@@ -1468,7 +1470,7 @@ class MainWindow(QMainWindow):
                 cutoff = (thresh_val / 100.0) * float(img.max())
             else:
                 cutoff = thresh_val
-            img = np.where(img >= cutoff, img, 0).astype(np.uint16)
+            img = np.where(img >= cutoff, img, 0).astype(np.float32)
 
         # Software ROI mask — zero pixels outside the union of all shapes
         # (MATLAB: data(roi)=0), applied only when Enabled.
@@ -1894,7 +1896,7 @@ class MainWindow(QMainWindow):
         kernel = np.exp(-((X**2 + Y**2) / (2 * sig_super**2))**p).astype(np.float32)
         kernel /= kernel.sum()
         out = fftconvolve(img.astype(np.float32), kernel, mode='same')
-        return np.clip(out, 0, np.iinfo(np.uint16).max).astype(np.uint16)
+        return out.astype(np.float32)
 
     def _epics_pv(self, name: str) -> str:
         prefix = self._epics_prefix_combo.currentText()
