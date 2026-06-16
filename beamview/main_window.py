@@ -307,11 +307,11 @@ class MainWindow(QMainWindow):
         lay = self._right_group("Background")
 
         row = QHBoxLayout()
-        self._save_bg_btn = QPushButton("Save Background")
+        self._save_bg_btn = QPushButton("Save BG")
         self._save_bg_btn.clicked.connect(self._on_save_bg)
         self._save_bg_btn.clicked.connect(self._trigger_redraw)
         row.addWidget(self._save_bg_btn)
-        self._subtract_bg_chk = QCheckBox("Subtract Background")
+        self._subtract_bg_chk = QCheckBox("Subtract BG")
         self._subtract_bg_chk.setEnabled(False)
         self._subtract_bg_chk.toggled.connect(self._trigger_redraw)
         row.addWidget(self._subtract_bg_chk)
