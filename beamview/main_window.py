@@ -107,6 +107,11 @@ class MainWindow(QMainWindow):
         self._first_frame = True
         self._sw_roi = None   # pyqtgraph ROI widget when software ROI enabled
         self._sw_roi_states = {}   # per-type remembered geometry across switches
+        # Cached boolean "inside" mask: recomputed only when the ROI geometry
+        # or the display coordinates change, reused across frames otherwise
+        self._sw_roi_mask = None
+        self._sw_roi_mask_sig = None
+        self._sw_roi_dirty = True
         # Last exposure/gain values written to (or read back from) the
         # camera, used to suppress no-op writes from editingFinished firing
         # on mere focus changes
@@ -1594,6 +1599,7 @@ class MainWindow(QMainWindow):
 
         self._sw_roi = roi
         self._sw_roi_type = t
+        self._sw_roi_dirty = True
         self._plot.addItem(roi)
         roi.sigRegionChanged.connect(self._on_sw_roi_changed)
         # Restore this type's last geometry if we've used it before
@@ -1610,7 +1616,8 @@ class MainWindow(QMainWindow):
 
     def _on_sw_roi_changed(self, *_):
         """Re-apply the mask to the last frame when paused; live frames pick it
-        up on the next tick."""
+        up on the next tick. Any change here invalidates the cached mask."""
+        self._sw_roi_dirty = True
         if not self._timer.isActive() and getattr(self, "_last_raw", None) is not None:
             self._process_and_display(self._last_raw)
 
@@ -1629,10 +1636,35 @@ class MainWindow(QMainWindow):
         return inside
 
     def _apply_sw_roi(self, img: np.ndarray, xx: np.ndarray, yy: np.ndarray):
-        """Zero pixels outside the ROI shape (or inside, if Invert). Works in
-        display coords via xx/yy, so pixel/physical units and the y-flip are
-        all handled. For rotated ellipses, masking uses the same affine the
-        widget applies: data = pos + R(angle)·local."""
+        """Zero pixels outside the ROI shape (or inside, if Invert).
+
+        The boolean "inside" mask is cached and only recomputed when the ROI
+        geometry (dirty flag) or the display coordinates change — across
+        consecutive frames with a static ROI it's reused, which matters for
+        large sensors and many-vertex polygons. Invert is applied at use, so
+        toggling it never needs a recompute of the mask itself."""
+        # Cheap, exact signature of xx/yy (uniform monotonic) + frame shape
+        sig = (img.shape, float(xx[0]), float(xx[-1]), xx.size,
+               float(yy[0]), float(yy[-1]), yy.size, self._sw_roi_type)
+        if (not self._sw_roi_dirty and self._sw_roi_mask is not None
+                and self._sw_roi_mask_sig == sig):
+            inside = self._sw_roi_mask
+        else:
+            inside = self._compute_sw_roi_inside(xx, yy)
+            self._sw_roi_mask = inside
+            self._sw_roi_mask_sig = sig
+            self._sw_roi_dirty = False
+
+        if inside is None:
+            return img
+        if self._sw_roi_invert_chk.isChecked():
+            return np.where(inside, 0, img).astype(img.dtype)
+        return np.where(inside, img, 0).astype(img.dtype)
+
+    def _compute_sw_roi_inside(self, xx: np.ndarray, yy: np.ndarray):
+        """Boolean mask of pixels inside the ROI shape, in display coords (so
+        pixel/physical units and the y-flip are handled). Rotated ellipses use
+        the same affine the widget applies: data = pos + R(angle)·local."""
         roi = self._sw_roi
         t = self._sw_roi_type
         X, Y = np.meshgrid(xx, yy)
@@ -1641,8 +1673,8 @@ class MainWindow(QMainWindow):
             pos, size = roi.pos(), roi.size()
             x0, x1 = sorted((pos.x(), pos.x() + size.x()))
             y0, y1 = sorted((pos.y(), pos.y() + size.y()))
-            inside = (X >= x0) & (X <= x1) & (Y >= y0) & (Y <= y1)
-        elif t in ("Circle", "Ellipse"):
+            return (X >= x0) & (X <= x1) & (Y >= y0) & (Y <= y1)
+        if t in ("Circle", "Ellipse"):
             pos, size = roi.pos(), roi.size()
             w, h = size.x(), size.y()
             ang = np.radians(roi.angle()) if t == "Ellipse" else 0.0
@@ -1652,18 +1684,13 @@ class MainWindow(QMainWindow):
             ly = -s * dx + c * dy
             nx = (lx - 0.5 * w) / (0.5 * w)
             ny = (ly - 0.5 * h) / (0.5 * h)
-            inside = nx * nx + ny * ny <= 1.0
-        elif t == "Polygon":
+            return nx * nx + ny * ny <= 1.0
+        if t == "Polygon":
             verts = [roi.mapToParent(pg.Point(p)) for p in roi.getState()["points"]]
             vx = np.array([p.x() for p in verts])
             vy = np.array([p.y() for p in verts])
-            inside = self._points_in_poly(X, Y, vx, vy)
-        else:
-            return img
-
-        if self._sw_roi_invert_chk.isChecked():
-            inside = ~inside
-        return np.where(inside, img, 0).astype(img.dtype)
+            return self._points_in_poly(X, Y, vx, vy)
+        return None
 
     def _apply_sgauss(self, img: np.ndarray, mean_param: int, p: float) -> np.ndarray:
         """Super-gaussian smoothing kernel, matching MATLAB source/make_plot.m."""
