@@ -750,10 +750,11 @@ class MainWindow(QMainWindow):
         # Row 1: Enable / Show / Invert
         row1 = QHBoxLayout()
         self._sw_roi_chk = QCheckBox("Enable")
+        self._sw_roi_chk.setChecked(True)   # harmless with an empty list
         self._sw_roi_chk.toggled.connect(self._on_sw_roi_changed)
         row1.addWidget(self._sw_roi_chk)
         self._sw_roi_show_chk = QCheckBox("Show")
-        self._sw_roi_show_chk.setChecked(False)
+        self._sw_roi_show_chk.setChecked(True)
         self._sw_roi_show_chk.toggled.connect(self._on_sw_roi_show_toggle)
         row1.addWidget(self._sw_roi_show_chk)
         self._sw_roi_invert_chk = QCheckBox("Invert")
@@ -773,8 +774,8 @@ class MainWindow(QMainWindow):
         self._sw_roi_add_btn.setFixedWidth(42)
         self._sw_roi_add_btn.clicked.connect(self._on_sw_roi_add)
         row2.addWidget(self._sw_roi_add_btn)
-        self._sw_roi_del_btn = QPushButton("Del Sel")
-        self._sw_roi_del_btn.setFixedWidth(52)
+        self._sw_roi_del_btn = QPushButton("Delete")
+        self._sw_roi_del_btn.setFixedWidth(56)
         self._sw_roi_del_btn.clicked.connect(self._on_sw_roi_remove_selected)
         row2.addWidget(self._sw_roi_del_btn)
         self._sw_roi_clear_btn = QPushButton("Clear")
