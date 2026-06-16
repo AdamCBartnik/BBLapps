@@ -111,6 +111,10 @@ class MainWindow(QMainWindow):
         self._sw_roi_entries = []   # list of geometry dicts (see _new_entry)
         self._sw_roi_sel = -1       # index of the selected/live entry
         self._sw_roi = None         # live pyqtgraph widget for the selected entry
+        # Coordinate system the entries' geometry is currently expressed in
+        # (pixels?, scale_x, scale_y); used to convert ROIs when units/scale
+        # change so they stay on the same sensor pixels
+        self._sw_roi_coord_params = None
         # Cached union mask: recomputed only when geometry or display coords
         # change, reused across frames otherwise
         self._sw_roi_mask = None
@@ -139,6 +143,8 @@ class MainWindow(QMainWindow):
                 self._scale_y_spin.blockSignals(False)
             except Exception as e:
                 print(f"[scale init] {e}")
+        # Record the initial coordinate system for software-ROI conversion
+        self._sw_roi_coord_params = self._sw_coord_params()
         # Rubber band for zoom selection (parented to viewport so it overlays the image)
         self._rubber_band = QRubberBand(QRubberBand.Rectangle, self._gfx.viewport())
         self._gfx.viewport().installEventFilter(self)
@@ -227,13 +233,8 @@ class MainWindow(QMainWindow):
 
         self._build_camera_info_group(bottom)
         self._build_data_processing_group(bottom)
-        # Software ROI stacked above the hardware ROI in one column
-        roi_col = QVBoxLayout()
-        roi_col.setSpacing(4)
-        self._build_sw_roi_group(roi_col)
-        self._build_roi_group(roi_col)
-        bottom.addLayout(roi_col)
-        self._build_colormap_group(bottom)
+        self._build_roi_group(bottom)
+        self._build_sw_roi_group(bottom)
         bottom.addStretch()
 
     # ------------------------------------------------------------------
@@ -266,6 +267,22 @@ class MainWindow(QMainWindow):
         row1.addWidget(self._fps_lbl)
         row1.addStretch()
         lay.addLayout(row1)
+
+        # Colormap controls live here, just below the Camera On button
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("Colormap:"))
+        self._colormap_combo = QComboBox()
+        self._colormap_combo.addItems(COLORMAPS)
+        self._colormap_combo.setCurrentText("Freeze")
+        self._colormap_combo.currentTextChanged.connect(self._apply_colormap)
+        self._colormap_combo.currentTextChanged.connect(self._trigger_redraw)
+        row2.addWidget(self._colormap_combo)
+        self._colormap_flip = QCheckBox("Reverse")
+        self._colormap_flip.toggled.connect(self._apply_colormap)
+        self._colormap_flip.toggled.connect(self._trigger_redraw)
+        row2.addWidget(self._colormap_flip)
+        row2.addStretch()
+        lay.addLayout(row2)
 
     def _build_snapshot_group(self):
         lay = self._right_group("Save Data")
@@ -785,21 +802,6 @@ class MainWindow(QMainWindow):
         row4.addStretch()
         lay.addLayout(row4)
 
-    def _build_colormap_group(self, parent):
-        lay = self._bottom_group("Colormap", parent)
-
-        row = QHBoxLayout()
-        self._colormap_combo = QComboBox()
-        self._colormap_combo.addItems(COLORMAPS)
-        self._colormap_combo.setCurrentText("Freeze")
-        self._colormap_combo.currentTextChanged.connect(self._apply_colormap)
-        self._colormap_combo.currentTextChanged.connect(self._trigger_redraw)
-        self._colormap_flip = QCheckBox("Reverse")
-        self._colormap_flip.toggled.connect(self._apply_colormap)
-        self._colormap_flip.toggled.connect(self._trigger_redraw)
-        row.addWidget(self._colormap_combo)
-        row.addWidget(self._colormap_flip)
-        lay.addLayout(row)
 
         lay.addStretch()
 
@@ -1319,6 +1321,8 @@ class MainWindow(QMainWindow):
 
     def _on_scale_changed(self):
         """Refit the plot view, write calibration back to EPICS, and redraw."""
+        # Keep software ROIs on the same sensor pixels across units/scale change
+        self._convert_sw_roi_for_coord_change()
         # Write new scale values back to EPICS calibration PVs if configured
         if self._entries and not self._units_pixels_chk.isChecked():
             idx = self._camera_combo.currentIndex()
@@ -1712,6 +1716,73 @@ class MainWindow(QMainWindow):
         sx = max(self._scale_x_spin.value(), 1e-9)
         sy = max(self._scale_y_spin.value(), 1e-9)
         return float(np.sqrt(sx * sy))
+
+    # -- units/scale coordinate conversion (keep ROIs on the same pixels) -----
+
+    def _sw_coord_params(self):
+        """(pixels?, scale_x, scale_y) describing the current display coords."""
+        return (self._units_pixels_chk.isChecked(),
+                self._scale_x_spin.value(), self._scale_y_spin.value())
+
+    def _axis_max(self, axis):
+        return self.camera.width_max if axis == "x" else self.camera.height_max
+
+    @staticmethod
+    def _axis_scale(axis, params):
+        pixels, sx, sy = params
+        return 1.0 if pixels else (sx if axis == "x" else sy)
+
+    def _disp_to_sensor(self, val, axis, params):
+        """Display coordinate -> mode-invariant sensor coordinate."""
+        pixels, sx, sy = params
+        if pixels:
+            return val
+        return val / self._axis_scale(axis, params) + 0.5 * self._axis_max(axis)
+
+    def _sensor_to_disp(self, sval, axis, params):
+        pixels, sx, sy = params
+        if pixels:
+            return sval
+        return (sval - 0.5 * self._axis_max(axis)) * self._axis_scale(axis, params)
+
+    def _conv_coord(self, val, axis, old, new):
+        return self._sensor_to_disp(self._disp_to_sensor(val, axis, old), axis, new)
+
+    def _conv_size(self, sz, axis, old, new):
+        return sz / self._axis_scale(axis, old) * self._axis_scale(axis, new)
+
+    def _convert_entry_coords(self, e, old, new):
+        if e["type"] == "Polygon":
+            e["points"] = [[self._conv_coord(x, "x", old, new),
+                            self._conv_coord(y, "y", old, new)]
+                           for x, y in e["points"]]
+        else:
+            px, py = e["pos"]
+            sw, sh = e["size"]
+            e["pos"] = [self._conv_coord(px, "x", old, new),
+                        self._conv_coord(py, "y", old, new)]
+            e["size"] = [self._conv_size(sw, "x", old, new),
+                         self._conv_size(sh, "y", old, new)]
+        e["mask"] = None
+        e["masksig"] = None
+
+    def _convert_sw_roi_for_coord_change(self):
+        """When units or scale change, re-express every ROI in the new display
+        coordinates so it stays on the same sensor pixels. The annular width is
+        stored in pixels and converted at mask time, so it needs no change."""
+        old = self._sw_roi_coord_params
+        new = self._sw_coord_params()
+        if old is None or old == new:
+            self._sw_roi_coord_params = new
+            return
+        self._save_live_state()
+        self._destroy_live_widget()
+        for e in self._sw_roi_entries:
+            self._convert_entry_coords(e, old, new)
+        self._sw_roi_coord_params = new
+        if 0 <= self._sw_roi_sel < len(self._sw_roi_entries):
+            self._select_entry(self._sw_roi_sel)
+        self._sw_roi_dirty = True
 
     @staticmethod
     def _points_in_poly(X, Y, vx, vy):
