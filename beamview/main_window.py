@@ -88,7 +88,7 @@ class MainWindow(QMainWindow):
         # Height a touch taller than the content needs: on Linux (different
         # default fonts) the right-side controls were clipped, forcing a
         # scrollbar that hid data. The extra ~20 px absorbs that.
-        self.resize(1150, 920)
+        self.resize(1175, 920)
 
         # Worker thread for blocking camera captures
         self._worker_thread = QThread(self)
@@ -218,7 +218,10 @@ class MainWindow(QMainWindow):
         # Right panel
         right_scroll = QScrollArea()
         right_scroll.setWidgetResizable(True)
-        right_scroll.setFixedWidth(295)
+        # Wide enough for the longest labels (e.g. "Allow Negative",
+        # "Reset Buffer", "Reverse"); the horizontal scrollbar is off, so any
+        # overflow clips at the edge rather than scrolling.
+        right_scroll.setFixedWidth(320)
         right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         right_widget = QWidget()
         self._right_layout = QVBoxLayout(right_widget)
