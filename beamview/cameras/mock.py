@@ -20,6 +20,7 @@ class MockCamera(CameraBase):
         self._gain = 1.0
         self._bits = bits
         self._frame = 0
+        self._frame_type = "Normal"   # Normal | Hot | Cold | Diff
 
     @property
     def width(self): return self._width
@@ -54,6 +55,12 @@ class MockCamera(CameraBase):
     @property
     def bits(self): return self._bits
 
+    @property
+    def frame_type(self): return self._frame_type
+
+    @frame_type.setter
+    def frame_type(self, value): self._frame_type = str(value)
+
     def set_roi(self, x: int, y: int, w: int, h: int):
         """Hardware ROI: crop the sensor to (x, y, w, h), clamped to bounds."""
         x = max(0, min(int(x), self._width_max - 1))
@@ -83,7 +90,25 @@ class MockCamera(CameraBase):
                         self._offset_x:self._offset_x + self._width]
         beam = np.exp(-0.5 * ((x - cx) / sx) ** 2 - 0.5 * ((y - cy) / sy) ** 2)
 
-        peak = self.max_value * 0.8 * self._gain * (self._exposure_time / 0.01)
-        noise = np.random.normal(0, self.max_value * 0.002, beam.shape)
-        image = np.clip(beam * peak + noise, 0, self.max_value)
-        return image.astype(np.uint16)
+        # Two independent frames: "hot" has 10% less beam magnitude than "cold".
+        # Scaled so Normal (their sum) peaks near the old single-frame level.
+        peak = self.max_value * 0.42 * self._gain * (self._exposure_time / 0.01)
+        nstd = self.max_value * 0.002
+
+        def frame(amp):
+            return beam * amp + np.random.normal(0, nstd, beam.shape)
+
+        cold = frame(peak)
+        hot = frame(0.9 * peak)
+
+        ft = self._frame_type.lower()
+        if ft == "hot":
+            out = hot
+        elif ft == "cold":
+            out = cold
+        elif ft == "diff":
+            out = hot - cold
+        else:   # Normal = sum of both
+            out = hot + cold
+
+        return np.clip(out, 0, self.max_value).astype(np.uint16)

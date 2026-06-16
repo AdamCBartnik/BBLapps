@@ -1111,6 +1111,15 @@ class MainWindow(QMainWindow):
             print(f"[gain] {e}")
 
     def _on_frame_type_changed(self, text: str):
+        # Cameras with a settable frame_type (e.g. MockCamera) use it directly
+        if hasattr(self.camera, "frame_type"):
+            try:
+                self.camera.frame_type = text
+            except Exception as e:
+                print(f"[frame type] {e}")
+            self._trigger_redraw()
+            return
+        # EPICS Area Detector cameras toggle the IOC cyclepump PV
         if _epics is None:
             return
         from .cameras.epics_areadetector import EPICSAreaDetectorCamera
