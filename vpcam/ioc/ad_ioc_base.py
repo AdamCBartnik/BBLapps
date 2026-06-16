@@ -117,6 +117,24 @@ class ADColorMode(enum.IntEnum):
     YUV421 = 7
 
 
+#: ADDataType -> numpy dtype for the in-IOC frame buffer. The buffer must be
+#: wide enough not to truncate the driver's frames before caproto serializes
+#: them (e.g. EMPAD serves Int32 sums that overflow uint16, and can go negative
+#: after background subtraction).
+_AD_TO_NUMPY = {
+    ADDataType.Int8: np.int8,
+    ADDataType.UInt8: np.uint8,
+    ADDataType.Int16: np.int16,
+    ADDataType.UInt16: np.uint16,
+    ADDataType.Int32: np.int32,
+    ADDataType.UInt32: np.uint32,
+    ADDataType.Int64: np.int64,
+    ADDataType.UInt64: np.uint64,
+    ADDataType.Float32: np.float32,
+    ADDataType.Float64: np.float64,
+}
+
+
 def to_enum(value: Any, enum_cls: type[enum.IntEnum]) -> enum.IntEnum:
     """Coerce a caproto channel value to an IntEnum member.
 
@@ -495,7 +513,13 @@ class ADCameraIOCBase(PVGroup):
         self._last_frame_time: float | None = None
 
         n = driver.max_frame_pixels
-        self._frame_buffer = np.zeros(n, dtype=np.uint16)
+        # Buffer dtype follows the driver's declared data_type so wide/signed
+        # frames (e.g. EMPAD Int32 sums) aren't truncated before caproto reads
+        # them. The ArrayData channel itself is a LONG (dtype=int), which
+        # carries every integer type up to Int32; true float serving would
+        # additionally need the channel dtype changed (not needed yet).
+        self._frame_np_dtype = _AD_TO_NUMPY.get(driver.data_type, np.uint16)
+        self._frame_buffer = np.zeros(n, dtype=self._frame_np_dtype)
         # Replace the placeholder ArrayData channel data with the real
         # fixed-length buffer before the server starts.
         self.image1_ArrayData._data["value"] = self._frame_buffer.copy()
@@ -505,7 +529,7 @@ class ADCameraIOCBase(PVGroup):
         # build_ioc_class). Give it its own correctly-sized buffer.
         self._has_image2 = hasattr(self, "image2_ArrayData")
         if self._has_image2:
-            self._frame_buffer2 = np.zeros(n, dtype=np.uint16)
+            self._frame_buffer2 = np.zeros(n, dtype=self._frame_np_dtype)
             self.image2_ArrayData._data["value"] = self._frame_buffer2.copy()
             self.image2_ArrayData._max_length = n
 
@@ -765,7 +789,7 @@ class ADCameraIOCBase(PVGroup):
         """Copy img into buf and publish the prefix:* metadata (everything
         except the prefix:ArrayCounter_RBV monitor PV). Returns (w, h)."""
         h, w = img.shape
-        flat = np.ascontiguousarray(img, dtype=np.uint16).reshape(-1)
+        flat = np.ascontiguousarray(img, dtype=buf.dtype).reshape(-1)
         buf.fill(0)
         ncopy = min(flat.size, buf.size)
         buf[:ncopy] = flat[:ncopy]

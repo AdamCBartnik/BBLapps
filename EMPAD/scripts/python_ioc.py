@@ -21,24 +21,9 @@ PAUSE_WHEN_NOT_ACQUIRING = 0.03
 PAUSE_RETRY_TO_CONNECT = 1.0
 MAX_ATTEMPTS = 3
 FILE_READ_PAUSE = 0.04
-STORAGE_ROOT = datetime.datetime.today().strftime("/media/ssd1/%Y/%m/%Y-%m-%d")
-if not os.path.isdir(STORAGE_ROOT):
-    os.makedirs(STORAGE_ROOT)
-
-### initialize the file counter
-initial_fileNs = [int(name[2:]) for name in os.listdir(STORAGE_ROOT) if name[:2] == "im" and name[2:].isdigit()]
-initial_fileNs.sort()
-tempfilecounter = 0
-tempfilereads = 0
-if len(initial_fileNs) == 0:
-    filecounter = 0
-else:
-    filecounter = initial_fileNs[-1]+1
-# other file settings
+# Raw frames live on the ramdisk; SSD archival + logging were removed.
 rawfilename = '/tmp/ramdisk/im{}'   # followed by, eg. '1.raw'
 transitfilename = "{}_t.raw".format(rawfilename.format(''))
-savefilename = os.path.join(STORAGE_ROOT, "im{}")
-logfilename = os.path.join(STORAGE_ROOT, "log.txt")
 IMSIZE = 4*130*128
 RAMSIZE = 3.9e9 ## 100 MB overhead
 file_t = -1
@@ -55,20 +40,9 @@ defaultheightmax = 128
 widthmax=defaultwidthmax
 heightmax=defaultheightmax
 
-caput('EMPAD:cam1:GC_WidthMax', widthmax)
-caput('EMPAD:cam1:GC_WidthMax_RBV', widthmax)
-caput('EMPAD:cam1:GC_Width', widthmax)
-caput('EMPAD:cam1:GC_Width_RBV', widthmax)
-caput('EMPAD:cam1:GC_HeightMax', heightmax)
-caput('EMPAD:cam1:GC_HeightMax_RBV', heightmax)
-caput('EMPAD:cam1:GC_Height', heightmax)
-caput('EMPAD:cam1:GC_Height_RBV', heightmax)
-caput('EMPAD:cam1:GC_OffsetX', 0)
-caput('EMPAD:cam1:GC_OffsetX_RBV', 0)
-caput('EMPAD:cam1:GC_OffsetY', 0)
-caput('EMPAD:cam1:GC_OffsetY_RBV', 0)
-
-bg_data = np.zeros((1,heightmax+2, widthmax))
+# Geometry/ROI is owned by empad_ioc.py now (it serves cam1:MinX/MinY/SizeX/
+# SizeY and the read-only _RBVs), so this controller no longer initializes or
+# mirrors geometry. It only sets the acquisition setpoints below.
 
 # Default Acquisition Parameters
 n_frames = 64    # 64
@@ -80,14 +54,9 @@ trigger_sleep = 0.02
 max_exposure_time = 10
 
 caput('EMPAD:cam1:n_frames', n_frames)
-caput('EMPAD:cam1:n_frames_RBV', n_frames)
-caput('EMPAD:cam1:GC_ExposureTime', exposure_time)
-caput('EMPAD:cam1:GC_ExposureTime_RBV', exposure_time)
+caput('EMPAD:cam1:AcquireTime', exposure_time)
 caput('EMPAD:cam1:AcquirePeriod', acquire_period)
-caput('EMPAD:cam1:AcquirePeriod_RBV', acquire_period)
 caput('EMPAD:cam1:trigger_sleep', trigger_sleep)
-cyclepump = caget('EMPAD:cam1:cyclepump')
-savefile = caget('EMPAD:cam1:Save')
 
 # --------------------------------------------------------
 # Initializing EMPAD
@@ -163,38 +132,20 @@ while(True):
         time.sleep(PAUSE_RETRY_TO_CONNECT)
     acquire = False   # always enter loop at least once
     while ((not acquire) and socket_connected):	 
-        # --------------------------------------------------------------
-        # Make sure that width parameters are reasonable
-        w = int(round(caget('EMPAD:cam1:GC_Width')))
-        h = int(round(caget('EMPAD:cam1:GC_Height')))
-        offx = int(round(caget('EMPAD:cam1:GC_OffsetX')))
-        offy = int(round(caget('EMPAD:cam1:GC_OffsetY')))
-            
-        offx = min(max(offx, 0), widthmax - 1)
-        offy = min(max(offy, 0), heightmax - 1)
-        
-        w = min(max(w, 1), widthmax - offx)
-        h = min(max(h, 1), heightmax - offy)
-            
-        caput('EMPAD:cam1:GC_Width_RBV', w)
-        caput('EMPAD:cam1:GC_Height_RBV', h)
-        caput('EMPAD:cam1:GC_OffsetX_RBV', offx)
-        caput('EMPAD:cam1:GC_OffsetY_RBV', offy)
-        
+        # ROI/geometry is owned by empad_ioc.py now (cam1:MinX/SizeX/...); this
+        # controller no longer reads or mirrors it.
         # --------------------------------------------------------------
         # Check exposure parameters
         
-        exposure_time_new = np.min([max_exposure_time, np.abs(caget('EMPAD:cam1:GC_ExposureTime'))])
+        exposure_time_new = np.min([max_exposure_time, np.abs(caget('EMPAD:cam1:AcquireTime'))])
         max_n_frames = np.ceil(max_exposure_time / exposure_time_new)
         n_frames_new = np.min([max_n_frames, np.ceil(np.abs(caget('EMPAD:cam1:n_frames')))])
         acquire_period_new = np.abs(caget('EMPAD:cam1:AcquirePeriod'))
-        
+
         trigger_sleep = np.abs(caget('EMPAD:cam1:trigger_sleep'))
-        
+
         send_acquire_parameters = False
-       
-        savefile = int(caget("EMPAD:cam1:Save"))
- 
+
         if (n_frames_new != n_frames):
             send_acquire_parameters = True
             n_frames = n_frames_new
@@ -202,20 +153,17 @@ while(True):
             for file in glob.glob('/tmp/ramdisk/im*.raw'):
                 os.remove(file)
             caput('EMPAD:cam1:n_frames', n_frames)
-            caput('EMPAD:cam1:n_frames_RBV', n_frames)
-            Nfiles = math.floor(RAMSIZE/(n_frames*IMSIZE)) 
-            
+            Nfiles = math.floor(RAMSIZE/(n_frames*IMSIZE))
+
         if (exposure_time_new != exposure_time):
             send_acquire_parameters = True
             exposure_time = exposure_time_new
-            caput('EMPAD:cam1:GC_ExposureTime', exposure_time)
-            caput('EMPAD:cam1:GC_ExposureTime_RBV', exposure_time)
-            
+            caput('EMPAD:cam1:AcquireTime', exposure_time)
+
         if (acquire_period_new != acquire_period):
             send_acquire_parameters = True
             acquire_period = acquire_period_new
             caput('EMPAD:cam1:AcquirePeriod', acquire_period)
-            caput('EMPAD:cam1:AcquirePeriod_RBV', acquire_period)
         
         if (send_acquire_parameters):
             print('Sending set_take_n command')
@@ -225,34 +173,8 @@ while(True):
         time.sleep(PAUSE_WHEN_NOT_ACQUIRING)
         acquire = (caget('EMPAD:cam1:Acquire') == 1)
 	
-    if savefile == 1 and socket_connected:
-        logf = open(logfilename, "a")
-        print(datetime.datetime.today().strftime("\n******%Y-%m-%d:%H:%M:%S******\n"), file=logf)
-        print("Images start at N = {}".format(filecounter), file=logf)
-        print("Tag: {}".format(caget("EMPAD:cam1:Tag")), file=logf)
-        print("Frames per file: {}".format(n_frames), file=logf)
-        print("Exposure: {}".format(exposure_time), file=logf)
-        print("Acquire period: {}".format(acquire_period), file=logf)
-        print("Trigger sleep: {}".format(trigger_sleep), file=logf)
-        print("Cycle pump: {}".format(cyclepump), file=logf)
-        print("Probe shutter: {}".format(caget("B29Shutter_cmd")), file=logf)
-        print("Pump shutter: {}".format(caget("B29IRShutter_cmd")), file=logf)
-        print("IR Delay: {}".format(caget("B29_IR_delay_cmd")), file=logf)
-        print("Knife Edge H: {}".format(caget("knife_horz")), file=logf)
-        print("Knife Edge V: {}".format(caget("knife_vert")), file=logf)
-        print("Laser rep rate: {}".format(caget("B29LFB_rep_rate")), file=logf)
-        print("Pump laser room power: {}".format(caget("B29_sample_power")), file=logf)
-        print("Pump laser filter: {}".format(caget("B29_sample_ND")), file=logf)
-        print("Pump laser size: {}".format(caget("SampAvgSize")), file=logf)
-        print("Pump laser fluence: {}".format(caget("B29_sample_fluence")), file=logf)
-        print("Probe laser pulse energy: {}".format(caget("B29LFB_target_energy")), file=logf)
-        for PV in ["B29CC1H_out", "B29CC1V_out", "B29S1_out", "B29CC2H_out", "B29CC2V_out",
-                   "B29S2_out", "B29Q3_out", "B29Q4_out", "B29SX1_out", "B29CC3H_out",
-                   "B29CC3V_out", "B29CC4H_out", "B29CC4V_out", "B29Q5_out", "B29CC5H_out",
-                   "B29CC5V_out", "B29O1_out", "B29CC6H_out", "B29CC6V_out", "B29O2_out"]:
-            print("{}: {}".format(PV, caget(PV)), file=logf)
-
-        logf.close()
+    # (run saving to SSD + the B29 beamline-PV provenance log were removed —
+    # never used.)
     
     caput(TINHIBITPV, 0) ### ENTER THE ACQUIRE LOOP WITH TRIGGER INHIBITED
     time.sleep(trigger_sleep)
@@ -281,13 +203,6 @@ while(True):
         time.sleep(trigger_sleep)
         caput(TINHIBITPV, 1)
         start_time = time.time()
-        # --------------------------------------------------------------
-        # handle file read from previous loop iteration
-        if serve_file:
-            if savefile == 1:
-                shutil.move(transitfilename, savefilename.format(filecounter))
-                filecounter = filecounter + 1
-            
         # --------------------------------------------------------------
         # confirm file write
         if not EMPAD_exposing: ### listen for 5OK
