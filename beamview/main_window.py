@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QLabel, QDoubleSpinBox, QSpinBox,
     QComboBox, QCheckBox, QGroupBox, QSizePolicy,
     QScrollArea, QLineEdit, QFrame, QRubberBand, QGridLayout,
+    QListWidget,
 )
 from PyQt5.QtCore import QTimer, Qt, QThread, QObject, pyqtSignal, QRect, QSize, QEvent
 from PyQt5.QtGui import QFont
@@ -105,10 +106,13 @@ class MainWindow(QMainWindow):
         self._last_analysis_yy:  np.ndarray | None = None
         self._zoom_start = None
         self._first_frame = True
-        self._sw_roi = None   # pyqtgraph ROI widget when software ROI enabled
-        self._sw_roi_states = {}   # per-type remembered geometry across switches
-        # Cached boolean "inside" mask: recomputed only when the ROI geometry
-        # or the display coordinates change, reused across frames otherwise
+        # Software ROI: a list of shape entries OR'd together; only the
+        # selected entry has a live widget on the image.
+        self._sw_roi_entries = []   # list of geometry dicts (see _new_entry)
+        self._sw_roi_sel = -1       # index of the selected/live entry
+        self._sw_roi = None         # live pyqtgraph widget for the selected entry
+        # Cached union mask: recomputed only when geometry or display coords
+        # change, reused across frames otherwise
         self._sw_roi_mask = None
         self._sw_roi_mask_sig = None
         self._sw_roi_dirty = True
@@ -726,35 +730,60 @@ class MainWindow(QMainWindow):
     def _build_sw_roi_group(self, parent):
         lay = self._bottom_group("Software ROI", parent)
 
+        # Row 1: Enable / Show / Invert
         row1 = QHBoxLayout()
         self._sw_roi_chk = QCheckBox("Enable")
-        self._sw_roi_chk.toggled.connect(self._on_sw_roi_toggle)
+        self._sw_roi_chk.toggled.connect(self._on_sw_roi_changed)
         row1.addWidget(self._sw_roi_chk)
-        self._sw_roi_type_combo = QComboBox()
-        self._sw_roi_type_combo.addItems(
-            ["Rectangle", "Circle", "Ellipse", "Polygon"])
-        self._sw_roi_type_combo.currentTextChanged.connect(
-            self._on_sw_roi_type_changed)
-        row1.addWidget(self._sw_roi_type_combo)
+        self._sw_roi_show_chk = QCheckBox("Show")
+        self._sw_roi_show_chk.setChecked(False)
+        self._sw_roi_show_chk.toggled.connect(self._on_sw_roi_show_toggle)
+        row1.addWidget(self._sw_roi_show_chk)
+        self._sw_roi_invert_chk = QCheckBox("Invert")
+        self._sw_roi_invert_chk.toggled.connect(self._on_sw_roi_changed)
+        row1.addWidget(self._sw_roi_invert_chk)
         row1.addStretch()
         lay.addLayout(row1)
 
+        # Row 2: type for next Add + Add / Remove / Clear
         row2 = QHBoxLayout()
-        self._sw_roi_show_chk = QCheckBox("Show")
-        # Default off so the checkbox state matches reality at startup (no ROI
-        # widget exists yet); checking it creates and shows the shape.
-        self._sw_roi_show_chk.setChecked(False)
-        self._sw_roi_show_chk.toggled.connect(self._on_sw_roi_show_toggle)
-        row2.addWidget(self._sw_roi_show_chk)
-        self._sw_roi_invert_chk = QCheckBox("Invert")
-        self._sw_roi_invert_chk.toggled.connect(self._on_sw_roi_changed)
-        row2.addWidget(self._sw_roi_invert_chk)
-        self._sw_roi_reset_btn = QPushButton("Reset")
-        self._sw_roi_reset_btn.setFixedWidth(50)
-        self._sw_roi_reset_btn.clicked.connect(self._on_sw_roi_reset)
-        row2.addWidget(self._sw_roi_reset_btn)
-        row2.addStretch()
+        self._sw_roi_type_combo = QComboBox()
+        self._sw_roi_type_combo.addItems(
+            ["Rectangle", "Circle", "Ellipse", "Polygon", "Annular Ellipse"])
+        self._sw_roi_type_combo.setToolTip("Type created by 'Add'")
+        row2.addWidget(self._sw_roi_type_combo)
+        self._sw_roi_add_btn = QPushButton("Add")
+        self._sw_roi_add_btn.setFixedWidth(42)
+        self._sw_roi_add_btn.clicked.connect(self._on_sw_roi_add)
+        row2.addWidget(self._sw_roi_add_btn)
+        self._sw_roi_del_btn = QPushButton("Del Sel")
+        self._sw_roi_del_btn.setFixedWidth(52)
+        self._sw_roi_del_btn.clicked.connect(self._on_sw_roi_remove_selected)
+        row2.addWidget(self._sw_roi_del_btn)
+        self._sw_roi_clear_btn = QPushButton("Clear")
+        self._sw_roi_clear_btn.setFixedWidth(48)
+        self._sw_roi_clear_btn.clicked.connect(self._on_sw_roi_clear_all)
+        row2.addWidget(self._sw_roi_clear_btn)
         lay.addLayout(row2)
+
+        # Row 3: the list of ROIs (only the selected one is shown/editable)
+        self._sw_roi_list = QListWidget()
+        self._sw_roi_list.setFixedHeight(70)
+        self._sw_roi_list.currentRowChanged.connect(self._on_sw_roi_list_select)
+        lay.addWidget(self._sw_roi_list)
+
+        # Row 4: width (pixels) for the selected ROI — Annular Ellipse only
+        row4 = QHBoxLayout()
+        row4.addWidget(QLabel("Width (px):"))
+        self._sw_roi_width_spin = QDoubleSpinBox()
+        self._sw_roi_width_spin.setRange(1, 100000)
+        self._sw_roi_width_spin.setValue(20)
+        self._sw_roi_width_spin.setFixedWidth(70)
+        self._sw_roi_width_spin.setEnabled(False)
+        self._sw_roi_width_spin.valueChanged.connect(self._on_sw_roi_width_changed)
+        row4.addWidget(self._sw_roi_width_spin)
+        row4.addStretch()
+        lay.addLayout(row4)
 
     def _build_colormap_group(self, parent):
         lay = self._bottom_group("Colormap", parent)
@@ -1427,10 +1456,9 @@ class MainWindow(QMainWindow):
                 cutoff = thresh_val
             img = np.where(img >= cutoff, img, 0).astype(np.uint16)
 
-        # Software ROI mask — zero pixels outside the shape (MATLAB: data(roi)=0).
-        # Applied only when Enabled; the widget may persist (hidden/shown)
-        # independently so its geometry is remembered across enable toggles.
-        if self._sw_roi is not None and self._sw_roi_chk.isChecked():
+        # Software ROI mask — zero pixels outside the union of all shapes
+        # (MATLAB: data(roi)=0), applied only when Enabled.
+        if self._sw_roi_chk.isChecked() and self._sw_roi_entries:
             mxx, myy, _ = self._get_display_xy(img.shape[0], img.shape[1])
             img = self._apply_sw_roi(img, mxx, myy)
 
@@ -1504,54 +1532,10 @@ class MainWindow(QMainWindow):
         self._update_analysis(ci, cx_arr, cy_arr)
 
     # ------------------------------------------------------------------
-    # Software ROI (interactive mask)
+    # Software ROI — a list of shapes OR'd together. Each entry holds
+    # data-coordinate geometry; only the selected entry has a live, draggable
+    # widget on the image. Masking = union of all entries (Invert flips it).
     # ------------------------------------------------------------------
-
-    def _on_sw_roi_toggle(self, on: bool):
-        """Enable/disable masking. The shape widget persists across toggles so
-        its geometry is remembered; only its visibility and whether the mask
-        is applied change."""
-        if on:
-            self._ensure_sw_roi()
-        self._update_sw_roi_visibility()
-        self._on_sw_roi_changed()
-
-    def _on_sw_roi_show_toggle(self, on: bool):
-        """Show/hide the outline without affecting whether the mask applies."""
-        if on:
-            self._ensure_sw_roi()
-        self._update_sw_roi_visibility()
-
-    def _on_sw_roi_reset(self):
-        """Restore the current shape to a sensible default for the CURRENT
-        view (so reset tracks zoom/hardware-ROI), in place to avoid the
-        rotated-ROI removeItem ghost."""
-        if self._sw_roi is None:
-            self._create_sw_roi()
-        else:
-            self._apply_default_geometry(self._sw_roi, self._sw_roi_type)
-            self._sw_roi_states[self._sw_roi_type] = self._sw_roi.getState()
-        self._update_sw_roi_visibility()
-        self._on_sw_roi_changed()
-
-    def _on_sw_roi_type_changed(self, *_):
-        """Swap the shape widget for the newly-selected type, remembering the
-        old type's geometry and restoring the new type's if seen before."""
-        if self._sw_roi is not None:
-            self._sw_roi_states[self._sw_roi_type] = self._sw_roi.getState()
-            self._destroy_sw_roi()
-            self._create_sw_roi()   # restores remembered geometry if any
-            self._update_sw_roi_visibility()
-            self._on_sw_roi_changed()
-
-    def _ensure_sw_roi(self):
-        if self._sw_roi is None:
-            self._create_sw_roi()
-
-    def _update_sw_roi_visibility(self):
-        """Outline is visible only when it exists and Show is checked."""
-        if self._sw_roi is not None:
-            self._sw_roi.setVisible(self._sw_roi_show_chk.isChecked())
 
     def _default_geom(self, t: str) -> dict:
         """Default geometry for ROI type `t` centered on the current view."""
@@ -1569,59 +1553,165 @@ class MainWindow(QMainWindow):
                                [cx - 0.5 * bw, cy + 0.5 * bh]]}
         return {"pos": [cx - 0.5 * bw, cy - 0.5 * bh], "size": [bw, bh]}
 
-    def _apply_default_geometry(self, roi, t: str):
-        """Set an existing widget to the default geometry for the current view."""
+    def _new_entry(self, t: str) -> dict:
+        """Build a list entry (data-coord geometry) for a new ROI of type t."""
         g = self._default_geom(t)
-        try:
-            roi.setAngle(0)
-        except Exception:
-            pass
+        e = {"type": t, "width": float(self._sw_roi_width_spin.value()),
+             "angle": 0.0, "mask": None, "masksig": None}
         if t == "Polygon":
-            roi.setPoints(g["points"])
+            e["points"] = [list(p) for p in g["points"]]
+            e["pos"] = e["size"] = None
         else:
-            roi.setSize(g["size"])
-            roi.setPos(g["pos"])
+            e["pos"] = list(g["pos"])
+            e["size"] = list(g["size"])
+            e["points"] = None
+        return e
 
-    def _create_sw_roi(self):
-        """Make the draggable shape for the current type, restoring this type's
-        remembered geometry if it has one, else a default for the current view."""
-        t = self._sw_roi_type_combo.currentText()
-        g = self._default_geom(t)
+    def _make_widget_for_entry(self, e: dict):
         pen = pg.mkPen('r', width=2)
-
+        t = e["type"]
         if t == "Rectangle":
-            roi = pg.RectROI(g["pos"], g["size"], pen=pen)
+            roi = pg.RectROI(e["pos"], e["size"], pen=pen)
         elif t == "Circle":
-            roi = pg.CircleROI(g["pos"], g["size"], pen=pen)
-        elif t == "Ellipse":
-            roi = pg.EllipseROI(g["pos"], g["size"], pen=pen)
+            roi = pg.CircleROI(e["pos"], e["size"], pen=pen)
+        elif t in ("Ellipse", "Annular Ellipse"):
+            roi = pg.EllipseROI(e["pos"], e["size"], pen=pen)
             roi.addRotateHandle([1, 0], [0.5, 0.5])   # tilt about the center
-        else:  # Polygon — start as a quad the user can reshape/extend
-            roi = pg.PolyLineROI(g["points"], closed=True, pen=pen)
+            if e["angle"]:
+                roi.setAngle(e["angle"])
+        else:  # Polygon
+            roi = pg.PolyLineROI(e["points"], closed=True, pen=pen)
+        return roi
 
-        self._sw_roi = roi
-        self._sw_roi_type = t
-        self._sw_roi_dirty = True
-        self._plot.addItem(roi)
-        roi.sigRegionChanged.connect(self._on_sw_roi_changed)
-        # Restore this type's last geometry if we've used it before
-        remembered = self._sw_roi_states.get(t)
-        if remembered is not None:
+    def _save_live_state(self):
+        """Read the live widget's geometry back into its list entry."""
+        i = self._sw_roi_sel
+        if self._sw_roi is None or not (0 <= i < len(self._sw_roi_entries)):
+            return
+        roi, e = self._sw_roi, self._sw_roi_entries[i]
+        if e["type"] == "Polygon":
+            verts = [roi.mapToParent(pg.Point(p)) for p in roi.getState()["points"]]
+            e["points"] = [[v.x(), v.y()] for v in verts]
+        else:
+            e["pos"] = [roi.pos().x(), roi.pos().y()]
+            e["size"] = [roi.size().x(), roi.size().y()]
+            e["angle"] = roi.angle()
+        e["mask"] = None      # geometry changed → drop this entry's cached mask
+        e["masksig"] = None
+
+    def _destroy_live_widget(self):
+        if self._sw_roi is not None:
             try:
-                roi.setState(remembered)
+                self._sw_roi.sigRegionChanged.disconnect(self._on_live_roi_changed)
             except Exception:
                 pass
+            self._plot.removeItem(self._sw_roi)
+            self._sw_roi = None
 
-    def _destroy_sw_roi(self):
-        self._plot.removeItem(self._sw_roi)
-        self._sw_roi = None
+    def _select_entry(self, i: int):
+        """Make entry i the live (shown/editable) one; -1 for none."""
+        self._save_live_state()
+        self._destroy_live_widget()
+        n = len(self._sw_roi_entries)
+        self._sw_roi_sel = i if 0 <= i < n else -1
+
+        if self._sw_roi_sel >= 0:
+            e = self._sw_roi_entries[self._sw_roi_sel]
+            roi = self._make_widget_for_entry(e)
+            self._sw_roi = roi
+            self._plot.addItem(roi)
+            roi.setVisible(self._sw_roi_show_chk.isChecked())
+            roi.sigRegionChanged.connect(self._on_live_roi_changed)
+            annular = (e["type"] == "Annular Ellipse")
+            self._sw_roi_width_spin.blockSignals(True)
+            self._sw_roi_width_spin.setValue(e["width"])
+            self._sw_roi_width_spin.setEnabled(annular)
+            self._sw_roi_width_spin.blockSignals(False)
+        else:
+            self._sw_roi_width_spin.setEnabled(False)
+
+        self._sw_roi_list.blockSignals(True)
+        self._sw_roi_list.setCurrentRow(self._sw_roi_sel)
+        self._sw_roi_list.blockSignals(False)
+
+    def _refresh_sw_roi_list(self):
+        self._sw_roi_list.blockSignals(True)
+        self._sw_roi_list.clear()
+        for i, e in enumerate(self._sw_roi_entries):
+            self._sw_roi_list.addItem(f"{i + 1}: {e['type']}")
+        if 0 <= self._sw_roi_sel < len(self._sw_roi_entries):
+            self._sw_roi_list.setCurrentRow(self._sw_roi_sel)
+        self._sw_roi_list.blockSignals(False)
+
+    # -- button / list / widget slots ----------------------------------------
+
+    def _on_sw_roi_add(self):
+        e = self._new_entry(self._sw_roi_type_combo.currentText())
+        self._sw_roi_entries.append(e)
+        if not self._sw_roi_show_chk.isChecked():
+            self._sw_roi_show_chk.setChecked(True)   # make the new one visible
+        self._refresh_sw_roi_list()
+        self._select_entry(len(self._sw_roi_entries) - 1)
+        self._on_sw_roi_changed()
+
+    def _on_sw_roi_remove_selected(self):
+        """Delete the selected entry (any position), then select a neighbor."""
+        i = self._sw_roi_sel
+        if not (0 <= i < len(self._sw_roi_entries)):
+            return
+        self._destroy_live_widget()      # the live widget is the selected entry
+        self._sw_roi_entries.pop(i)
+        self._refresh_sw_roi_list()
+        self._select_entry(min(i, len(self._sw_roi_entries) - 1))
+        self._on_sw_roi_changed()
+
+    def _on_sw_roi_clear_all(self):
+        self._destroy_live_widget()
+        self._sw_roi_entries.clear()
+        self._sw_roi_sel = -1
+        self._sw_roi_width_spin.setEnabled(False)
+        self._refresh_sw_roi_list()
+        self._on_sw_roi_changed()
+
+    def _on_sw_roi_list_select(self, row: int):
+        if row != self._sw_roi_sel:
+            self._select_entry(row)   # geometry unchanged → no mask recompute
+
+    def _on_sw_roi_width_changed(self, val):
+        i = self._sw_roi_sel
+        if 0 <= i < len(self._sw_roi_entries):
+            e = self._sw_roi_entries[i]
+            if e["type"] == "Annular Ellipse":
+                e["width"] = float(val)
+                e["mask"] = None
+                e["masksig"] = None
+                self._on_sw_roi_changed()
+
+    def _on_sw_roi_show_toggle(self, on: bool):
+        if self._sw_roi is not None:
+            self._sw_roi.setVisible(on)
+
+    def _on_live_roi_changed(self, *_):
+        """The selected widget moved: sync its entry and refresh the mask."""
+        self._save_live_state()
+        self._on_sw_roi_changed()
 
     def _on_sw_roi_changed(self, *_):
-        """Re-apply the mask to the last frame when paused; live frames pick it
-        up on the next tick. Any change here invalidates the cached mask."""
+        """Invalidate the cached union mask; redraw the last frame when paused
+        (live frames pick it up on the next tick)."""
         self._sw_roi_dirty = True
         if not self._timer.isActive() and getattr(self, "_last_raw", None) is not None:
             self._process_and_display(self._last_raw)
+
+    # -- masking --------------------------------------------------------------
+
+    def _sw_px_to_display(self) -> float:
+        """Display-units-per-pixel, for converting the (pixel) annular width."""
+        if self._units_pixels_chk.isChecked():
+            return 1.0
+        sx = max(self._scale_x_spin.value(), 1e-9)
+        sy = max(self._scale_y_spin.value(), 1e-9)
+        return float(np.sqrt(sx * sy))
 
     @staticmethod
     def _points_in_poly(X, Y, vx, vy):
@@ -1637,62 +1727,78 @@ class MainWindow(QMainWindow):
                 j = i
         return inside
 
-    def _apply_sw_roi(self, img: np.ndarray, xx: np.ndarray, yy: np.ndarray):
-        """Zero pixels outside the ROI shape (or inside, if Invert).
+    def _entry_geo_sig(self, e: dict):
+        t = e["type"]
+        if t == "Polygon":
+            return (t, tuple(tuple(p) for p in e["points"]))
+        return (t, tuple(e["pos"]), tuple(e["size"]), e["angle"], e["width"])
 
-        The boolean "inside" mask is cached and only recomputed when the ROI
-        geometry (dirty flag) or the display coordinates change — across
-        consecutive frames with a static ROI it's reused, which matters for
-        large sensors and many-vertex polygons. Invert is applied at use, so
-        toggling it never needs a recompute of the mask itself."""
-        # Cheap, exact signature of xx/yy (uniform monotonic) + frame shape
-        sig = (img.shape, float(xx[0]), float(xx[-1]), xx.size,
-               float(yy[0]), float(yy[-1]), yy.size, self._sw_roi_type)
+    def _apply_sw_roi(self, img: np.ndarray, xx: np.ndarray, yy: np.ndarray):
+        """Zero pixels outside the union of all ROI shapes (or inside, if
+        Invert). The union and each entry's mask are cached, recomputed only
+        when geometry or display coordinates change, so per-frame cost is one
+        np.where regardless of how many ROIs there are."""
+        entries = self._sw_roi_entries
+        if not entries:
+            return img
+        px = self._sw_px_to_display()
+        coord_sig = (img.shape, float(xx[0]), float(xx[-1]), xx.size,
+                     float(yy[0]), float(yy[-1]), yy.size, px)
+
         if (not self._sw_roi_dirty and self._sw_roi_mask is not None
-                and self._sw_roi_mask_sig == sig):
+                and self._sw_roi_mask_sig == coord_sig):
             inside = self._sw_roi_mask
         else:
-            inside = self._compute_sw_roi_inside(xx, yy)
+            X, Y = np.meshgrid(xx, yy)
+            inside = np.zeros(img.shape, dtype=bool)
+            for e in entries:
+                esig = (coord_sig, self._entry_geo_sig(e))
+                if e["mask"] is not None and e["masksig"] == esig:
+                    m = e["mask"]
+                else:
+                    m = self._compute_entry_inside(e, X, Y, px)
+                    e["mask"], e["masksig"] = m, esig
+                inside |= m
             self._sw_roi_mask = inside
-            self._sw_roi_mask_sig = sig
+            self._sw_roi_mask_sig = coord_sig
             self._sw_roi_dirty = False
 
-        if inside is None:
-            return img
         if self._sw_roi_invert_chk.isChecked():
             return np.where(inside, 0, img).astype(img.dtype)
         return np.where(inside, img, 0).astype(img.dtype)
 
-    def _compute_sw_roi_inside(self, xx: np.ndarray, yy: np.ndarray):
-        """Boolean mask of pixels inside the ROI shape, in display coords (so
-        pixel/physical units and the y-flip are handled). Rotated ellipses use
-        the same affine the widget applies: data = pos + R(angle)·local."""
-        roi = self._sw_roi
-        t = self._sw_roi_type
-        X, Y = np.meshgrid(xx, yy)
-
+    def _compute_entry_inside(self, e: dict, X, Y, px_to_disp: float):
+        """Boolean inside-mask for one entry, in display coords (pixel/physical
+        units and y-flip handled). Annular width is given in pixels and scaled
+        to display units via px_to_disp."""
+        t = e["type"]
         if t == "Rectangle":
-            pos, size = roi.pos(), roi.size()
-            x0, x1 = sorted((pos.x(), pos.x() + size.x()))
-            y0, y1 = sorted((pos.y(), pos.y() + size.y()))
+            (x0, y0), (sw, sh) = e["pos"], e["size"]
+            x0, x1 = sorted((x0, x0 + sw))
+            y0, y1 = sorted((y0, y0 + sh))
             return (X >= x0) & (X <= x1) & (Y >= y0) & (Y <= y1)
-        if t in ("Circle", "Ellipse"):
-            pos, size = roi.pos(), roi.size()
-            w, h = size.x(), size.y()
-            ang = np.radians(roi.angle()) if t == "Ellipse" else 0.0
+        if t in ("Circle", "Ellipse", "Annular Ellipse"):
+            (px, py), (sw, sh) = e["pos"], e["size"]
+            ang = np.radians(e["angle"]) if t != "Circle" else 0.0
             c, s = np.cos(ang), np.sin(ang)
-            dx, dy = X - pos.x(), Y - pos.y()
+            dx, dy = X - px, Y - py
             lx = c * dx + s * dy        # into the shape's local (unrotated) frame
             ly = -s * dx + c * dy
-            nx = (lx - 0.5 * w) / (0.5 * w)
-            ny = (ly - 0.5 * h) / (0.5 * h)
-            return nx * nx + ny * ny <= 1.0
+            a, b = 0.5 * sw, 0.5 * sh
+            if a <= 0 or b <= 0:
+                return np.zeros(X.shape, dtype=bool)
+            Lx, Ly = lx - a, ly - b     # local coords centered on the ellipse
+            if t == "Annular Ellipse":
+                ellip = np.sqrt(Lx * Lx * (b / a) + Ly * Ly * (a / b))
+                ab = np.sqrt(a * b)
+                halfw = 0.5 * e["width"] * px_to_disp
+                return np.abs(ellip - ab) <= halfw
+            return (Lx / a) ** 2 + (Ly / b) ** 2 <= 1.0
         if t == "Polygon":
-            verts = [roi.mapToParent(pg.Point(p)) for p in roi.getState()["points"]]
-            vx = np.array([p.x() for p in verts])
-            vy = np.array([p.y() for p in verts])
+            vx = np.array([p[0] for p in e["points"]])
+            vy = np.array([p[1] for p in e["points"]])
             return self._points_in_poly(X, Y, vx, vy)
-        return None
+        return np.zeros(X.shape, dtype=bool)
 
     def _apply_sgauss(self, img: np.ndarray, mean_param: int, p: float) -> np.ndarray:
         """Super-gaussian smoothing kernel, matching MATLAB source/make_plot.m."""
