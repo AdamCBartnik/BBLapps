@@ -235,7 +235,10 @@ class EPICSAreaDetectorCamera(CameraBase):
             int(self._get(":cam1:SizeY_RBV") or self.height),
         )
 
-    def start_streaming(self, rate_hz: float = 5.0):
+    def start_streaming(self, rate_hz: float = 10.0):
+        # 10 Hz matches the exposure-setter's period floor (max(0.1, exp/0.95)),
+        # so a fresh start runs at the same max rate a short-exposure write
+        # produces — no more starting slow at 5 Hz until exposure is touched.
         epics.caput(self._prefix + ":cam1:ImageMode", "Continuous")
         if rate_hz > 0:
             epics.caput(self._prefix + ":cam1:AcquirePeriod", 1.0 / rate_hz)

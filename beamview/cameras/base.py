@@ -93,7 +93,7 @@ class CameraBase(ABC):
         """Return current ROI as (x, y, w, h). Default reads offset/width/height properties."""
         return self.offset_x, self.offset_y, self.width, self.height
 
-    def start_streaming(self, rate_hz: float = 5.0):
+    def start_streaming(self, rate_hz: float = 10.0):
         """Begin continuous frame capture. Override for cameras that need it."""
 
     def stop_streaming(self):

@@ -85,7 +85,10 @@ class MainWindow(QMainWindow):
         self._to_epics_default = bool(to_epics_default)
         self.camera = camera
         self._set_window_title()
-        self.resize(1150, 900)
+        # Height a touch taller than the content needs: on Linux (different
+        # default fonts) the right-side controls were clipped, forcing a
+        # scrollbar that hid data. The extra ~20 px absorbs that.
+        self.resize(1150, 920)
 
         # Worker thread for blocking camera captures
         self._worker_thread = QThread(self)
@@ -1077,13 +1080,13 @@ class MainWindow(QMainWindow):
         self._on_reset_range()
 
         if was_running:
-            self.camera.start_streaming(rate_hz=5.0)
+            self.camera.start_streaming(rate_hz=10.0)
             self._timer.start()
 
     def _on_toggle(self, checked):
         if checked:
             self._on_off_btn.setText("Camera On")
-            self.camera.start_streaming(rate_hz=5.0)
+            self.camera.start_streaming(rate_hz=10.0)
             self._timer.start()
         else:
             self._timer.stop()
