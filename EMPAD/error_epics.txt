@@ -1,6 +1,0 @@
-CA.Client.Exception...............................................
-    Warning: "Virtual circuit disconnect"
-    Context: "lnxepics-p22.classe.cornell.edu:40236"
-    Source File: ../cac.cpp line 1237
-    Current Time: Mon May 25 2026 10:37:48.928994289
-..................................................................
