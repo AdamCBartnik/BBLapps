@@ -741,7 +741,9 @@ class MainWindow(QMainWindow):
 
         row2 = QHBoxLayout()
         self._sw_roi_show_chk = QCheckBox("Show")
-        self._sw_roi_show_chk.setChecked(True)
+        # Default off so the checkbox state matches reality at startup (no ROI
+        # widget exists yet); checking it creates and shows the shape.
+        self._sw_roi_show_chk.setChecked(False)
         self._sw_roi_show_chk.toggled.connect(self._on_sw_roi_show_toggle)
         row2.addWidget(self._sw_roi_show_chk)
         self._sw_roi_invert_chk = QCheckBox("Invert")
