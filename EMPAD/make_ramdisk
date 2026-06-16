@@ -1,0 +1,4 @@
+#! /bin/bash
+mkdir /tmp/ramdisk/
+sudo mount -t tmpfs -o size=4000m myramdisk /tmp/ramdisk
+

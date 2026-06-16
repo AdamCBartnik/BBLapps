@@ -1,0 +1,7 @@
+dbglvl=0
+setint /home/padme/data/mmpad2x3/calibration/i.tif
+setdist /home/padme/data/mmpad2x3/calibration/x.tif /home/padme/data/mmpad2x3/calibration/y.tif
+imagepath /home/padme/ioc
+exposepath /home/padme/ioc
+grafpath /home/padme/ioc
+get "/home/padme/start.gl"

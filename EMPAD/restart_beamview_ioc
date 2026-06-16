@@ -1,0 +1,10 @@
+#! /bin/bash
+if [ $USER != "millenium" ] ; then
+        echo "This script must be run by millenium"
+        exit 1
+else
+screen -S empad_beamview_IOC -X kill 
+cd /home/millenium/ioc/scripts/
+sleep 2
+screen -S empad_beamview_IOC ./run_python_epics_ioc.sh
+fi
