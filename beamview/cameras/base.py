@@ -66,7 +66,19 @@ class CameraBase(ABC):
 
     @abstractmethod
     def snapshot(self) -> np.ndarray:
-        """Capture and return a 2-D array of shape (height, width)."""
+        """Capture and return a 2-D array of shape (height, width).
+        For dual-frame cameras this is the primary (image1) frame."""
+
+    @property
+    def has_dual_frame(self) -> bool:
+        """True for 'double' detectors that publish two frames per acquisition
+        (e.g. pump/probe), enabling the Hot/Cold/Diff modes. Default False."""
+        return False
+
+    def snapshot_dual(self):
+        """Return (image1, image2). image2 is None for single-frame cameras.
+        Both frames are from the same acquisition (override to guarantee it)."""
+        return self.snapshot(), None
 
     def has_new_frame(self) -> bool:
         """Return True if a new frame is available since the last call.

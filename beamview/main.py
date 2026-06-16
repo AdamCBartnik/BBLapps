@@ -8,7 +8,7 @@ Usage
 
     # Quick single-camera launch (home use):
     python -m beamview --epics VPCAM:03
-    python -m beamview --mock
+    python -m beamview --mock        # connects to the mock IOC at prefix MOCK
 """
 
 import argparse
@@ -32,7 +32,13 @@ def _parse_args():
     )
     group.add_argument(
         "--mock", action="store_true",
-        help="Launch with the built-in mock camera (no hardware required)",
+        help="Connect to the mock IOC at prefix MOCK (run it yourself with "
+             "`python mock_ioc.py` from vpcam/ioc)",
+    )
+    p.add_argument(
+        "--dual", action="store_true",
+        help="With --epics: treat the IOC as a two-image (double) detector, "
+             "enabling Hot/Cold/Diff",
     )
     return p.parse_args()
 
@@ -45,14 +51,18 @@ def main():
     from .main_window import MainWindow
 
     if args.mock:
-        from .cameras.mock import MockCamera
-        cam = MockCamera()
-        window = MainWindow(cam, lab_name="Mock", entries=None, epics_prefix="")
+        # The mock is a real IOC (prefix MOCK, served by mock_ioc.py);
+        # beamview only cagets. It's a two-image camera; home-like, so the
+        # per-frame "To EPICS" caput defaults off (no analysis records).
+        from .cameras.epics_areadetector import EPICSAreaDetectorCamera
+        cam = EPICSAreaDetectorCamera("MOCK", dual_frame=True)
+        window = MainWindow(cam, lab_name="Mock", entries=None,
+                            epics_prefix="", to_epics_default=False)
 
     elif args.epics:
         from .cameras.epics_areadetector import EPICSAreaDetectorCamera
         prefix = args.epics.rstrip(":")
-        cam = EPICSAreaDetectorCamera(prefix)
+        cam = EPICSAreaDetectorCamera(prefix, dual_frame=args.dual)
         window = MainWindow(cam, lab_name=prefix, entries=None, epics_prefix="")
 
     else:  # --config
@@ -62,13 +72,14 @@ def main():
             config_path = Path(__file__).parent / args.config
         try:
             from .config_loader import load_config
-            lab_name, entries, epics_prefix = load_config(config_path)
+            lab_name, entries, epics_prefix, to_epics = load_config(config_path)
         except Exception as e:
             QMessageBox.critical(None, "Config error", str(e))
             sys.exit(1)
 
         window = MainWindow(entries[0].camera, lab_name=lab_name,
-                            entries=entries, epics_prefix=epics_prefix)
+                            entries=entries, epics_prefix=epics_prefix,
+                            to_epics_default=to_epics)
 
     window.show()
     sys.exit(app.exec_())

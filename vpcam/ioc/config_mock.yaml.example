@@ -1,7 +1,0 @@
-device:
-  instance_id: "99"
-epics:
-  prefix: "VPCAM:99"
-camera:
-  type: mock
-  autotrigger_rate_hz: 5.0

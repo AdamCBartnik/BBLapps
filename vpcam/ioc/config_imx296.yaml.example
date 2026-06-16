@@ -10,7 +10,7 @@ epics:
   beacon_address: "255.255.255.255"  # CA broadcast; change for segmented networks
 
 camera:
-  type: imx296               # Camera type: imx708 | imx296 | imx296_mono | mock
+  type: imx296               # Camera type: imx708 | imx296 | imx296_mono
   ae_enable: 0               # Auto Exposure: 0=manual, 1=auto.
                              # Set 0 before writing AcquireTime/Gain.
   exposure_time_us: 5000     # Microseconds. Min ~30 µs for IMX296. ae_enable must be 0.

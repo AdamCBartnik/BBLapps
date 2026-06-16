@@ -14,7 +14,9 @@ Camera ID format — every id is simply the IOC's PV prefix:
 
     "<prefix>"         → EPICSAreaDetectorCamera("<prefix>")
                          e.g. "EMPAD", "VPCAM:03", "VPCAMGW:02"
-    "MOCK"             → built-in mock camera (no hardware)
+    "MOCK"             → the mock IOC's prefix "MOCK" (run it yourself:
+                         python mock_ioc.py). Beamview only cagets —
+                         it never spawns an IOC.
 
 Scale calibration PVs:
     Read/written as  <prefix>:cam1:CalibX  and  <prefix>:cam1:CalibY
@@ -26,9 +28,11 @@ Example YAML
 ------------
 name: B29
 epics_prefix: "B29"
+publish_to_epics: true        # lab-wide "To EPICS" default (optional, true)
 
 cameras:
   - id: "EMPAD"
+    dual: true                # two-image detector (optional, false)
   - id: "VPCAM:01"
 """
 
@@ -77,14 +81,22 @@ def _write_scale(cal_prefix: str, x: float, y: float) -> None:
     epics.caput(f"{cal_prefix}:cam1:CalibY", y)
 
 
-def _make_camera(camera_id: str) -> tuple[str, CameraBase, str, bool]:
+def _make_camera(camera_id: str, dual: bool = False
+                 ) -> tuple[str, CameraBase, str, bool]:
     """
     Parse a camera ID string and return
     (display_name, camera_object, cal_prefix, has_epics_cal).
+
+    dual: True if this is a two-image ("double") detector (enables the
+    Hot/Cold/Diff frame types). Declared in the config, not probed.
     """
+    # "MOCK" is just the mock IOC's prefix (served by the standalone
+    # mock_ioc.py). Beamview connects to it over CA like any other
+    # areaDetector IOC; the user runs `python mock_ioc.py` separately.
+    display_override = None
     if re.match(r"^MOCK$", camera_id, re.IGNORECASE):
-        from .cameras.mock import MockCamera
-        return "Mock", MockCamera(), "", False
+        camera_id = "MOCK"
+        display_override = "Mock"
 
     if re.match(r"^\d+\.\d+\.\d+\.\d+$", camera_id):
         raise ValueError(
@@ -98,14 +110,15 @@ def _make_camera(camera_id: str) -> tuple[str, CameraBase, str, bool]:
 
     from .cameras.epics_areadetector import EPICSAreaDetectorCamera
     prefix = _strip_trailing_colon(prefix)
-    cam = EPICSAreaDetectorCamera(prefix)
+    cam = EPICSAreaDetectorCamera(prefix, dual_frame=dual)
     # CalibX/Y are VPCam extension records; a plain areaDetector IOC won't
     # have them. Probe once so such cameras degrade to local-only scale.
     has_cal = epics.caget(f"{prefix}:cam1:CalibX", timeout=2.0) is not None
-    return prefix, cam, prefix, has_cal
+    return display_override or prefix, cam, prefix, has_cal
 
 
-def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry], str]:
+def load_config(yaml_path: str | Path
+                ) -> tuple[str, list[CameraEntry], str, bool]:
     """
     Parse a beamview YAML config file.
 
@@ -117,6 +130,13 @@ def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry], str]:
         One entry per camera, in config-file order.
     epics_prefix : str
         Default EPICS prefix for this lab (e.g. "B29"), or "" if not set.
+    publish_to_epics : bool
+        Lab-wide default for the "To EPICS" checkbox (default True). Set
+        false for labs with no analysis records (e.g. home) so the per-frame
+        caput doesn't stall on connection timeouts.
+
+    Per-camera keys: each cameras[] entry takes "id" (required) and optional
+    "dual: true" for two-image ("double") detectors (Hot/Cold/Diff).
     """
     yaml_path = Path(yaml_path)
     with open(yaml_path) as fh:
@@ -124,17 +144,20 @@ def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry], str]:
 
     lab_name = cfg.get("name", yaml_path.stem)
     epics_prefix = cfg.get("epics_prefix", "")
-    camera_ids = [c["id"] for c in cfg.get("cameras", [])]
+    publish_to_epics = bool(cfg.get("publish_to_epics", True))
+    cameras = cfg.get("cameras", [])
 
-    if not camera_ids:
+    if not cameras:
         raise ValueError(f"No cameras listed in {yaml_path}")
 
     entries: list[CameraEntry] = []
     errors: list[str] = []
 
-    for cid in camera_ids:
+    for c in cameras:
+        cid = c["id"]
         try:
-            display, cam, cal_prefix, has_cal = _make_camera(cid)
+            display, cam, cal_prefix, has_cal = _make_camera(
+                cid, dual=bool(c.get("dual", False)))
             entries.append(CameraEntry(
                 display_name=display,
                 camera=cam,
@@ -153,4 +176,4 @@ def load_config(yaml_path: str | Path) -> tuple[str, list[CameraEntry], str]:
     if not entries:
         raise RuntimeError("No usable cameras found in config.")
 
-    return lab_name, entries, epics_prefix
+    return lab_name, entries, epics_prefix, publish_to_epics

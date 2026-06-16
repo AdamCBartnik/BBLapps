@@ -40,7 +40,7 @@ FRAME_AVG_PX_BUDGET = 10_000 * 128 * 128
 
 class FrameWorker(QObject):
     """Captures frames on a background thread so the Qt event loop stays free."""
-    frame_ready = pyqtSignal(object)   # emits np.ndarray
+    frame_ready = pyqtSignal(object)   # emits (img1, img2); img2 None if single
 
     def __init__(self, camera: "CameraBase"):
         super().__init__()
@@ -56,8 +56,10 @@ class FrameWorker(QObject):
             return
         self._busy = True
         try:
-            img = self._camera.snapshot()
-            self.frame_ready.emit(img)
+            # Always fetch the raw frame pair; the GUI decides how to combine
+            # (Normal/Hot/Cold/Diff). image2 is None for single-frame cameras.
+            pair = self._camera.snapshot_dual()
+            self.frame_ready.emit(pair)
         except Exception as e:
             print(f"[worker] {e}")
         finally:
@@ -66,18 +68,21 @@ class FrameWorker(QObject):
 
 class MainWindow(QMainWindow):
     def __init__(self, camera: CameraBase, lab_name: str = "Beamview",
-                 entries=None, epics_prefix: str = ""):
+                 entries=None, epics_prefix: str = "",
+                 to_epics_default: bool = True):
         """
         Parameters
         ----------
         camera  : initial (first) camera object
         lab_name: shown in window title
         entries : list[CameraEntry] from config_loader, or None for single-camera
+        to_epics_default: initial state of the "To EPICS" checkbox (lab-wide)
         """
         super().__init__()
         self._entries = entries or []   # CameraEntry list; empty = single-camera mode
         self._lab_name = lab_name
         self._epics_prefix = epics_prefix
+        self._to_epics_default = bool(to_epics_default)
         self.camera = camera
         self._set_window_title()
         self.resize(1150, 900)
@@ -127,6 +132,7 @@ class MainWindow(QMainWindow):
         self._last_gain_written = None
 
         self._build_ui()
+        self._update_frame_type_capability()
         self._refresh_camera_settings()
         self._apply_colormap()
         self._update_colorbar_range()
@@ -415,7 +421,7 @@ class MainWindow(QMainWindow):
         self._single_frame_chk.toggled.connect(self._trigger_redraw)
         epics_row.addWidget(self._single_frame_chk)
         self._to_epics_chk = QCheckBox("To EPICS")
-        self._to_epics_chk.setChecked(True)
+        self._to_epics_chk.setChecked(self._to_epics_default)
         epics_row.addWidget(self._to_epics_chk)
         epics_row.addStretch()
         lay.addLayout(epics_row)
@@ -1066,6 +1072,7 @@ class MainWindow(QMainWindow):
         self._t_last_display = None
         self._refresh_camera_settings()
         self._refresh_roi_boxes()
+        self._update_frame_type_capability()
         self._set_window_title()
         self._on_reset_range()
 
@@ -1111,22 +1118,21 @@ class MainWindow(QMainWindow):
             print(f"[gain] {e}")
 
     def _on_frame_type_changed(self, text: str):
-        # Cameras with a settable frame_type (e.g. MockCamera) use it directly
-        if hasattr(self.camera, "frame_type"):
-            try:
-                self.camera.frame_type = text
-            except Exception as e:
-                print(f"[frame type] {e}")
-            self._trigger_redraw()
-            return
-        # EPICS Area Detector cameras toggle the IOC cyclepump PV
-        if _epics is None:
-            return
-        from .cameras.epics_areadetector import EPICSAreaDetectorCamera
-        if not isinstance(self.camera, EPICSAreaDetectorCamera):
-            return
-        cyclepump = 0 if text.lower() == "normal" else 1
-        _epics.caput(f"{self.camera._prefix}:cam1:cyclepump", cyclepump, wait=False)
+        # The frame type only changes how the raw (image1, image2) pair is
+        # combined in _combine_frame — no camera/IOC write needed. Just redraw
+        # (live frames pick it up on the next tick).
+        self._trigger_redraw()
+
+    def _update_frame_type_capability(self):
+        """Capability detection: enable the Hot/Cold/Diff frame types only for
+        dual-frame ("double") cameras. Single-frame cameras serve no image2,
+        so only Normal makes sense — disable the combo and pin it there."""
+        dual = bool(getattr(self.camera, "has_dual_frame", False))
+        self._frame_type_combo.setEnabled(dual)
+        if not dual and self._frame_type_combo.currentText() != "Normal":
+            self._frame_type_combo.blockSignals(True)
+            self._frame_type_combo.setCurrentText("Normal")
+            self._frame_type_combo.blockSignals(False)
 
     def _on_make_new_figure(self):
         """Open a frozen SnapshotWindow with the current frame."""
@@ -1369,15 +1375,42 @@ class MainWindow(QMainWindow):
     def _update_frame(self):
         """Direct (synchronous) capture + display — used only when camera is off."""
         try:
-            img = self.camera.snapshot()
+            pair = self.camera.snapshot_dual()
         except Exception as e:
             print(f"[snapshot] {e}")
             return
-        self._process_and_display(img)
+        self._process_and_display(self._combine_frame(pair))
 
-    def _on_frame_ready(self, img: np.ndarray):
-        """Slot called from the background worker thread via signal."""
-        self._process_and_display(img)
+    def _on_frame_ready(self, pair):
+        """Slot called from the background worker thread via signal.
+        pair is (img1, img2); img2 is None for single-frame cameras."""
+        self._process_and_display(self._combine_frame(pair))
+
+    def _combine_frame(self, pair) -> np.ndarray:
+        """Combine a raw (image1, image2) pair into the displayed frame
+        according to the selected frame type. All math is done here, in
+        beamview — the IOC publishes only the two raw frames.
+
+            Normal = image1 + image2     (total signal)
+            Cold   = image1
+            Hot    = image2
+            Diff   = image2 - image1     (can be negative)
+
+        For single-frame cameras (image2 is None) every type returns image1."""
+        img1, img2 = pair
+        a = np.asarray(img1, dtype=np.float32)
+        if img2 is None:
+            return a
+        b = np.asarray(img2, dtype=np.float32)
+
+        ft = self._frame_type_combo.currentText().lower()
+        if ft == "cold":
+            return a
+        if ft == "hot":
+            return b
+        if ft == "diff":
+            return b - a
+        return a + b   # Normal
 
     def _process_and_display(self, img: np.ndarray):
         # Work in float32 throughout (like MATLAB's double, but half the memory

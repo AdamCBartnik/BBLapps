@@ -10,7 +10,7 @@ epics:
   beacon_address: "255.255.255.255"  # CA broadcast; customer may need to change for segmented networks
 
 camera:
-  type: imx708               # Camera type: imx708 | imx296 | imx296_mono | mock
+  type: imx708               # Camera type: imx708 | imx296 | imx296_mono
   sensor_mode: 0             # 0 = Full res (4608x2592), 1 = 2x2 Binned (2304x1296). Switchable live via cam1:SensorMode.
   af_mode: 0                 # 0 = Manual, 1 = Auto, 2 = Continuous
   lens_position: 4.3         # Diopters (1/meters). ~4.3 = ~23cm (~9in) working distance

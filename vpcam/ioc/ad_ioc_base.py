@@ -176,6 +176,11 @@ class CameraDriver(abc.ABC):
     #: device-specific PVs, declared at class level
     extension_pvs: list[ExtensionPV] = []
 
+    #: True for "double" detectors that publish two raw frames per acquisition
+    #: (e.g. pump/probe). When set, capture() returns (img1, img2) and the IOC
+    #: serves a parallel image2:* PV surface with matching UniqueId.
+    dual_frame: bool = False
+
     # -- lifecycle ----------------------------------------------------------
 
     def open(self) -> None:
@@ -251,8 +256,12 @@ class CameraDriver(abc.ABC):
     # -- acquisition --------------------------------------------------------
 
     @abc.abstractmethod
-    def capture(self) -> np.ndarray:
+    def capture(self):
         """Blocking: acquire and return one frame, shape (h, w), uint16.
+
+        Dual-frame drivers (dual_frame = True) instead return a tuple
+        (img1, img2) of two frames from the same acquisition; both are
+        published under image1:/image2: with a matching UniqueId.
 
         May return None to indicate no new frame became available yet
         (event-driven drivers, e.g. the CA gateway); the acquisition loop
@@ -305,6 +314,45 @@ def _make_extension_property(spec: ExtensionPV):
         return value
 
     return prop
+
+
+def _make_image2_members() -> dict:
+    """Build the image2:* PV surface for dual-frame cameras.
+
+    Mirrors image1 exactly. Added to the IOC class only when the driver
+    declares dual_frame = True (see build_ioc_class), so single-frame IOCs
+    don't advertise a second image — beamview probes image2 presence for
+    capability detection.
+    """
+    return {
+        "image2_ArrayData": pvproperty(
+            name="image2:ArrayData", value=[0], dtype=int, max_length=1,
+            read_only=True,
+            doc="Second image waveform, uint16; active w*h prefix"),
+        "image2_ArrayCounter_RBV": pvproperty(
+            name="image2:ArrayCounter_RBV", value=0, dtype=int, read_only=True,
+            doc="Frames published on image2"),
+        "image2_UniqueId_RBV": pvproperty(
+            name="image2:UniqueId_RBV", value=0, dtype=int, read_only=True,
+            doc="Frame id; matches image1:UniqueId_RBV for the same shot"),
+        "image2_TimeStamp_RBV": pvproperty(
+            name="image2:TimeStamp_RBV", value=0.0, dtype=float,
+            read_only=True, doc="Unix time of frame capture"),
+        "image2_ArraySize0_RBV": pvproperty(
+            name="image2:ArraySize0_RBV", value=0, dtype=int, read_only=True,
+            doc="Active frame width (px)"),
+        "image2_ArraySize1_RBV": pvproperty(
+            name="image2:ArraySize1_RBV", value=0, dtype=int, read_only=True,
+            doc="Active frame height (px)"),
+        "image2_NDimensions_RBV": pvproperty(
+            name="image2:NDimensions_RBV", value=2, dtype=int, read_only=True),
+        "image2_DataType_RBV": pvproperty(
+            name="image2:DataType_RBV", value=ADDataType.UInt16,
+            read_only=True),
+        "image2_ColorMode_RBV": pvproperty(
+            name="image2:ColorMode_RBV", value=ADColorMode.Mono,
+            read_only=True),
+    }
 
 
 class ADCameraIOCBase(PVGroup):
@@ -453,6 +501,14 @@ class ADCameraIOCBase(PVGroup):
         self.image1_ArrayData._data["value"] = self._frame_buffer.copy()
         self.image1_ArrayData._max_length = n
 
+        # image2 surface exists only for dual-frame cameras (added by
+        # build_ioc_class). Give it its own correctly-sized buffer.
+        self._has_image2 = hasattr(self, "image2_ArrayData")
+        if self._has_image2:
+            self._frame_buffer2 = np.zeros(n, dtype=np.uint16)
+            self.image2_ArrayData._data["value"] = self._frame_buffer2.copy()
+            self.image2_ArrayData._max_length = n
+
     # -- startup ----------------------------------------------------------------
 
     async def startup(self):
@@ -471,6 +527,9 @@ class ADCameraIOCBase(PVGroup):
         await self.cam1_ColorMode.write(d.color_mode)
         await self.cam1_ColorMode_RBV.write(d.color_mode)
         await self.image1_ColorMode_RBV.write(d.color_mode)
+        if self._has_image2:
+            await self.image2_DataType_RBV.write(d.data_type)
+            await self.image2_ColorMode_RBV.write(d.color_mode)
 
         x, y, w, h = await asyncio.to_thread(d.get_roi)
         await self._publish_roi(x, y, w, h)
@@ -672,10 +731,14 @@ class ADCameraIOCBase(PVGroup):
             await asyncio.to_thread(self.driver.on_acquire_start)
             while True:
                 t0 = time.monotonic()
-                img = await asyncio.to_thread(self.driver.capture)
-                if img is None:
+                result = await asyncio.to_thread(self.driver.capture)
+                if result is None:
                     continue   # no new frame from the driver yet; retry
-                await self._publish_frame(img)
+                if self.driver.dual_frame:
+                    img1, img2 = result
+                    await self._publish_frame(img1, img2)
+                else:
+                    await self._publish_frame(result)
                 n_done += 1
                 if n_target is not None and n_done >= n_target:
                     break
@@ -697,23 +760,38 @@ class ADCameraIOCBase(PVGroup):
                 # Loop ended on its own (Single/Multiple complete or error)
                 await self.cam1_Acquire.write(AcquireState.Done)
 
-    async def _publish_frame(self, img: np.ndarray):
+    async def _write_image(self, prefix: str, buf: np.ndarray,
+                           img: np.ndarray, counter: int, now: float):
+        """Copy img into buf and publish the prefix:* metadata (everything
+        except the prefix:ArrayCounter_RBV monitor PV). Returns (w, h)."""
         h, w = img.shape
         flat = np.ascontiguousarray(img, dtype=np.uint16).reshape(-1)
+        buf.fill(0)
+        ncopy = min(flat.size, buf.size)
+        buf[:ncopy] = flat[:ncopy]
 
-        n = flat.size
-        self._frame_buffer.fill(0)
-        ncopy = min(n, self._frame_buffer.size)
-        self._frame_buffer[:ncopy] = flat[:ncopy]
+        await getattr(self, f"{prefix}_ArrayData").write(buf.copy())
+        await getattr(self, f"{prefix}_ArraySize0_RBV").write(w)
+        await getattr(self, f"{prefix}_ArraySize1_RBV").write(h)
+        await getattr(self, f"{prefix}_TimeStamp_RBV").write(now)
+        await getattr(self, f"{prefix}_UniqueId_RBV").write(counter)
+        return w, h
 
+    async def _publish_frame(self, img1: np.ndarray, img2: np.ndarray = None):
         now = time.time()
         counter = int(self.cam1_ArrayCounter_RBV.value) + 1
 
-        await self.image1_ArrayData.write(self._frame_buffer.copy())
-        await self.image1_ArraySize0_RBV.write(w)
-        await self.image1_ArraySize1_RBV.write(h)
-        await self.image1_TimeStamp_RBV.write(now)
-        await self.image1_UniqueId_RBV.write(counter)
+        w, h = await self._write_image("image1", self._frame_buffer,
+                                       img1, counter, now)
+
+        # Publish image2 (with the SAME counter/UniqueId) BEFORE arming the
+        # image1 monitor, so a client that wakes on image1:ArrayCounter_RBV
+        # finds both frames already in place with matching UniqueIds.
+        if img2 is not None and self._has_image2:
+            await self._write_image("image2", self._frame_buffer2,
+                                    img2, counter, now)
+            await self.image2_ArrayCounter_RBV.write(counter)
+
         await self.cam1_ArrayCounter_RBV.write(counter)
         await self.cam1_ArraySizeX_RBV.write(w)
         await self.cam1_ArraySizeY_RBV.write(h)
@@ -742,5 +820,7 @@ def build_ioc_class(driver_cls: type[CameraDriver]) -> type[ADCameraIOCBase]:
         f"ext_{spec.name}": _make_extension_property(spec)
         for spec in driver_cls.extension_pvs
     }
+    if getattr(driver_cls, "dual_frame", False):
+        members.update(_make_image2_members())
     return type(f"ADCameraIOC_{driver_cls.__name__}",
                 (ADCameraIOCBase,), members)

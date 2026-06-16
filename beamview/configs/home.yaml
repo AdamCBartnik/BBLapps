@@ -1,8 +1,10 @@
 name: Home
 epics_prefix: ""
+publish_to_epics: false      # no analysis records at home — don't stall on caput
 
 cameras:
-  - id: "VPCAM:03"      # the Pi IOC directly
-  - id: "VPCAM:03:GW"   # same camera through the standalone gateway
-                        # (run: python gateway_ioc.py VPCAM:03)
-  - id: "MOCK"
+#  - id: "VPCAM:03"      # the Pi IOC directly
+#  - id: "VPCAM:03:GW"   # same camera through the standalone gateway
+#                        # (run: python gateway_ioc.py VPCAM:03)
+  - id: "MOCK"           # served by mock_ioc.py
+    dual: true           # two-image (double) camera → Hot/Cold/Diff

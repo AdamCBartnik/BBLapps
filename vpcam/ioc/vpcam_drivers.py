@@ -16,8 +16,9 @@ Drivers:
                       MONO_PISP_COMP1 which picamera2 cannot decompress, so
                       each frame is captured by rpicam-still --raw writing a
                       DNG to /dev/shm, read back with rawpy (~175 ms/frame).
-    MockDriver        No hardware; drifting Gaussian blob for testing the
-                      PV surface anywhere (including Windows).
+
+(The hardware-free mock camera is a standalone tool, mock_ioc.py, not a
+driver here — see its module docstring.)
 
 All hardware libraries (picamera2, libcamera, rawpy) are imported lazily in
 driver constructors so this module imports cleanly on any machine.
@@ -741,82 +742,12 @@ class IMX296MonoDriver(PiDriverBase):
         self.led.close()
 
 
-# ---------------------------------------------------------------------------
-# Mock driver — no hardware, for testing the PV surface anywhere
-# ---------------------------------------------------------------------------
-
-class MockDriver(CameraDriver):
-    """Drifting Gaussian blob + noise, mirroring beamview's MockCamera."""
-
-    manufacturer = "VPCam"
-    model = "Mock Camera"
-    SENSOR_W = 640
-    SENSOR_H = 480
-
-    extension_pvs = [
-        ExtensionPV(name='Uptime_RBV', dtype=float, initial=0.0,
-                    read_only=True, doc='IOC uptime (s)',
-                    getter=lambda d: time.time() - d._t_start,
-                    poll_period=5.0),
-    ]
-
-    def __init__(self, config: dict = None, **kw):
-        self._roi = (0, 0, self.SENSOR_W, self.SENSOR_H)
-        self._exp = 0.01
-        self._gain = 1.0
-        self._t_start = time.time()
-
-    @property
-    def sensor_width(self):
-        return self.SENSOR_W
-
-    @property
-    def sensor_height(self):
-        return self.SENSOR_H
-
-    def get_roi(self):
-        return self._roi
-
-    def set_roi(self, x, y, w, h):
-        self._roi = clamp_roi(x, y, w, h, self.SENSOR_W, self.SENSOR_H)
-        return self._roi
-
-    @property
-    def exposure_time(self):
-        return self._exp
-
-    @exposure_time.setter
-    def exposure_time(self, s):
-        self._exp = max(1e-6, float(s))
-
-    @property
-    def gain(self):
-        return self._gain
-
-    @gain.setter
-    def gain(self, v):
-        self._gain = float(v)
-
-    @property
-    def bits_per_pixel(self):
-        return 10
-
-    def capture(self):
-        t = time.time() - self._t_start
-        x, y, w, h = self._roi
-        yy, xx = np.mgrid[y:y + h, x:x + w]
-        cx = self.SENSOR_W / 2 + 60 * np.sin(0.31 * t)
-        cy = self.SENSOR_H / 2 + 45 * np.cos(0.23 * t)
-        sig = 28 + 6 * np.sin(0.11 * t)
-        amp = 700 * self._gain * (self._exp / 0.01)
-        img = amp * np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * sig ** 2))
-        img += np.random.normal(8, 4, img.shape)
-        return np.clip(img, 0, 1023).astype(np.uint16)
-
+# The hardware-free mock lives in its own standalone tool, mock_ioc.py — it
+# has no hardware, no config, and nothing VPCam-specific, so it is not a
+# vpcam_launcher camera type.
 
 DRIVER_MAP = {
     'imx708': IMX708Driver,
     'imx296': IMX296Driver,
     'imx296_mono': IMX296MonoDriver,
-    'mock': MockDriver,
 }

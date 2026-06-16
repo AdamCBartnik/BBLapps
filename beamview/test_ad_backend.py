@@ -28,9 +28,9 @@ import numpy as np
 
 def main():
     env = dict(os.environ)
-    env["VPCAM_CONFIG"] = os.path.join(VPCAM_IOC, "config_mock.yaml.example")
     ioc = subprocess.Popen(
-        [sys.executable, "-u", os.path.join(VPCAM_IOC, "vpcam_launcher.py")],
+        [sys.executable, "-u", os.path.join(VPCAM_IOC, "mock_ioc.py"),
+         "--prefix", "MOCK"],
         cwd=VPCAM_IOC, env=env,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     time.sleep(4)
@@ -49,14 +49,15 @@ def main():
             raise SystemExit("mock IOC died on startup")
 
         from beamview.cameras.epics_areadetector import EPICSAreaDetectorCamera
-        cam = EPICSAreaDetectorCamera("VPCAM:99")
+        # dual_frame is declared by the caller now (no runtime probe)
+        cam = EPICSAreaDetectorCamera("MOCK", dual_frame=True)
         time.sleep(1.0)
 
         print("[1] geometry & identity")
-        check("width_max", cam.width_max, 640)
-        check("height_max", cam.height_max, 480)
-        check("bits", cam.bits, 10)
-        check("max_value", cam.max_value, 1023)
+        check("width_max", cam.width_max, 1000)
+        check("height_max", cam.height_max, 1000)
+        check("bits", cam.bits, 12)
+        check("max_value", cam.max_value, 4095)
 
         print("[2] new-frame monitor (mock auto-streams at 5 Hz)")
         cam.has_new_frame()  # clear any startup event
@@ -66,9 +67,21 @@ def main():
 
         print("[3] snapshot")
         img = cam.snapshot()
-        check("shape", img.shape, (480, 640))
-        check("dtype", img.dtype, np.dtype("uint16"))
+        check("shape", img.shape, (1000, 1000))
+        # Native CA dtype is preserved (uint16 transports as int32 over CA;
+        # a real two-image detector would serve float64). The float pipeline
+        # downstream doesn't care which.
+        check("integer dtype", bool(np.issubdtype(img.dtype, np.integer)), True)
         check("blob present", bool(img.max() > 300), True)
+
+        print("[3b] dual-frame: capability + atomic pair")
+        check("has_dual_frame", cam.has_dual_frame, True)
+        img1, img2 = cam.snapshot_dual()
+        check("image1 shape", img1.shape, (1000, 1000))
+        check("image2 present", img2 is not None, True)
+        check("image2 shape", img2.shape, (1000, 1000))
+        # cold (image1) carries ~10% more beam than hot (image2)
+        check("cold brighter than hot", bool(img1.max() >= img2.max()), True)
 
         print("[4] exposure set/readback")
         cam.exposure_time = 0.03
@@ -82,7 +95,10 @@ def main():
         time.sleep(0.7)
         img = cam.snapshot()
         check("snapshot follows ROI", img.shape, (100, 200))
-        cam.set_roi(0, 0, 640, 480)
+        img1, img2 = cam.snapshot_dual()
+        check("dual follows ROI", (img1.shape, img2.shape),
+              ((100, 200), (100, 200)))
+        cam.set_roi(0, 0, 1000, 1000)
 
         print("[6] stop/start streaming")
         cam.stop_streaming()

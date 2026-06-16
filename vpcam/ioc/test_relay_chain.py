@@ -1,7 +1,7 @@
 """
 test_relay_chain.py — end-to-end test of the standalone CA gateway.
 
-Chain: MockDriver IOC (VPCAM:99) <- gateway_ioc.py (VPCAM:99:GW) <- this client.
+Chain: mock_ioc.py (MOCK) <- gateway_ioc.py (MOCK:GW) <- this client.
 
 Checks that the gateway mirrors identity/geometry, relays live frames, and
 forwards ROI + exposure writes to the source.
@@ -18,18 +18,15 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PYTHON = sys.executable
-SRC = "VPCAM:99:"
-GW = "VPCAM:99:GW:"
+SRC = "MOCK:"
+GW = "MOCK:GW:"
 
 
-def start_proc(argv, config_name=None, server_port=None,
-               addr_list="127.0.0.1"):
+def start_proc(argv, server_port=None, addr_list="127.0.0.1"):
     """On one host both caproto servers would bind TCP 5064 (SO_REUSEADDR on
     Windows) and searches land on the wrong server — so the gateway gets its
     own port. In production source and gateway run on different machines."""
     env = dict(os.environ)
-    if config_name is not None:
-        env["VPCAM_CONFIG"] = os.path.join(HERE, config_name)
     env["EPICS_CA_ADDR_LIST"] = addr_list
     env["EPICS_CA_AUTO_ADDR_LIST"] = "NO"
     if server_port is not None:
@@ -41,25 +38,17 @@ def start_proc(argv, config_name=None, server_port=None,
 
 
 def main():
-    # The source boots IDLE (autotrigger 0) and has never produced a frame:
+    # The source boots IDLE (--rate 0) and has never produced a frame:
     # ArraySize0/1_RBV are 0.  The gateway must start the source itself and
     # survive the no-frames-yet window (regression: the zero sizes used to
     # crash the relay loop fatally on first use).
-    import yaml
-    with open(os.path.join(HERE, "config_mock.yaml.example")) as f:
-        cfg = yaml.safe_load(f)
-    cfg["camera"]["autotrigger_rate_hz"] = 0.0
-    idle_cfg = os.path.join(HERE, "_gwtest_idle_source.yaml")
-    with open(idle_cfg, "w") as f:
-        yaml.dump(cfg, f)
-
-    src = start_proc([os.path.join(HERE, "vpcam_launcher.py")],
-                     config_name="_gwtest_idle_source.yaml")
+    src = start_proc([os.path.join(HERE, "mock_ioc.py"),
+                      "--prefix", "MOCK", "--rate", "0"])
     time.sleep(4)
     # Gateway serves on 5074 but its internal client searches the source on
     # 5064.  --extensions none: the mock source has no LED/AE/etc. PVs, so
-    # the auto prefix-sniff (VPCAM -> common) would just produce timeouts.
-    gw = start_proc([os.path.join(HERE, "gateway_ioc.py"), "VPCAM:99",
+    # the auto prefix-sniff would just produce timeouts.
+    gw = start_proc([os.path.join(HERE, "gateway_ioc.py"), "MOCK",
                      "--extensions", "none"],
                     server_port=5074, addr_list="127.0.0.1:5064")
     time.sleep(6)
@@ -96,9 +85,9 @@ def main():
         model = bytes(np.asarray(rd(GW + "cam1:Model_RBV"),
                                  dtype=np.uint8)).decode().rstrip("\x00")
         check("model mentions gateway", "gateway" in model, True)
-        check("MaxSizeX", int(rd(GW + "cam1:MaxSizeX_RBV")), 640)
-        check("MaxSizeY", int(rd(GW + "cam1:MaxSizeY_RBV")), 480)
-        check("BitsPerPixel", int(rd(GW + "cam1:BitsPerPixel_RBV")), 10)
+        check("MaxSizeX", int(rd(GW + "cam1:MaxSizeX_RBV")), 1000)
+        check("MaxSizeY", int(rd(GW + "cam1:MaxSizeY_RBV")), 1000)
+        check("BitsPerPixel", int(rd(GW + "cam1:BitsPerPixel_RBV")), 12)
 
         print("[2] frames flow through the gateway")
         c0 = int(rd(GW + "image1:ArrayCounter_RBV"))
@@ -163,10 +152,6 @@ def main():
             raise SystemExit(1)
         print("ALL CHECKS PASSED")
     finally:
-        try:
-            os.unlink(idle_cfg)
-        except Exception:
-            pass
         for proc in (gw, src):
             proc.terminate()
         for proc, name in [(gw, "gateway"), (src, "source")]:
