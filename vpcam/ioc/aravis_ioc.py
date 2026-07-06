@@ -45,8 +45,15 @@ glibc 2.17, 2026-06-11):
 Then `arv-tool-0.8` lists cameras, and this IOC runs.
 
 Usage:
-    python aravis_ioc.py CAMERA_IP PREFIX [--rate HZ]
+    python aravis_ioc.py CAMERA_IP PREFIX [--rate HZ] [--swap-endian]
                          [caproto options, e.g. --list-pvs]
+
+--swap-endian: some cameras send >8-bit pixel data big-endian and Aravis
+assumes little-endian (FLIR/Point Grey Blackfly, e.g. BFLY-PGE-31S4M —
+https://github.com/AravisProject/aravis/issues/921, still open; the
+camera's own pgrPixelBigEndian feature doesn't help).  The symptom is
+noise-like images with wild banding.  It's up to whoever runs the IOC to
+know their camera needs this.
 """
 
 from __future__ import annotations
@@ -68,11 +75,16 @@ class AravisDriver(CameraDriver):
     manufacturer = "GigE Vision"
     extension_pvs: list = []
 
-    def __init__(self, ip_address: str):
+    def __init__(self, ip_address: str, swap_endian: bool = False):
         import gi
         gi.require_version("Aravis", "0.8")
         from gi.repository import Aravis
         self._Aravis = Aravis
+
+        # Some cameras deliver >8-bit pixel data big-endian while Aravis
+        # assumes little-endian (Blackfly; aravis issue #921). User-declared
+        # at startup — there's no reliable way to probe it.
+        self._swap_endian = bool(swap_endian)
 
         # Direct unicast connection — no discovery broadcast involved
         self._cam = Aravis.Camera.new(ip_address)
@@ -133,8 +145,9 @@ class AravisDriver(CameraDriver):
         # run on different worker threads
         self._lock = threading.Lock()
 
+        swap_note = ", swapping pixel endianness" if self._swap_endian else ""
         print(f"[aravis] connected: {self.manufacturer} {self.model}, "
-              f"{self._sensor_w}x{self._sensor_h}, Mono{self._bits}")
+              f"{self._sensor_w}x{self._sensor_h}, Mono{self._bits}{swap_note}")
 
     def _apply_startup_defaults(self):
         """Put the camera in plain manual-exposure mode.
@@ -367,8 +380,11 @@ class AravisDriver(CameraDriver):
             if self._bits == 8:
                 img = np.frombuffer(data, dtype=np.uint8, count=w * h)
                 return img.reshape(h, w).astype(np.uint16)
-            img = np.frombuffer(data, dtype="<u2", count=w * h)
-            return np.ascontiguousarray(img.reshape(h, w))
+            # --swap-endian: parse as big-endian and let the conversion to
+            # native uint16 do the byte swap (one C loop, no extra pass)
+            wire = ">u2" if self._swap_endian else "<u2"
+            img = np.frombuffer(data, dtype=wire, count=w * h)
+            return np.ascontiguousarray(img.reshape(h, w), dtype=np.uint16)
         except Exception as e:
             self._decode_errors = getattr(self, "_decode_errors", 0) + 1
             if self._decode_errors <= 3:
@@ -407,6 +423,12 @@ def _parse_args(argv):
         help="Start continuous acquisition at this rate on boot, Hz "
              "(default 0 = boot idle; clients start via cam1:Acquire)",
     )
+    parser.add_argument(
+        "--swap-endian", "--swap_endian", action="store_true",
+        help="Byte-swap >8-bit pixel data before serving. Needed for cameras "
+             "that send big-endian while Aravis assumes little-endian "
+             "(FLIR/Point Grey Blackfly — aravis issue #921)",
+    )
     args, remaining = parser.parse_known_args(argv[1:])
     sys.argv = [argv[0], *remaining]
     return args
@@ -419,7 +441,7 @@ def main():
     prefix = args.prefix.rstrip(":")
 
     print(f"[aravis] camera {args.camera_ip}  ->  {prefix}:")
-    driver = AravisDriver(args.camera_ip)
+    driver = AravisDriver(args.camera_ip, swap_endian=args.swap_endian)
 
     IOCClass = build_ioc_class(AravisDriver)
     ioc_options, run_options = ioc_arg_parser(
