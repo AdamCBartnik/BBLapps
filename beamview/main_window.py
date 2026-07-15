@@ -21,7 +21,7 @@ except ImportError:
     _epics = None
 
 try:
-    from utilities.get_colormap import get_colormap as _get_colormap
+    from BBL.get_colormap import get_colormap as _get_colormap
     COLORMAPS = _get_colormap()
 except Exception:
     COLORMAPS = ["Gray", "Viridis", "Plasma", "Inferno", "Magma", "Hot", "Jet"]
@@ -849,7 +849,7 @@ class MainWindow(QMainWindow):
         if self._colormap_flip.isChecked():
             name += "_r"
         try:
-            from utilities.get_colormap import get_colormap
+            from BBL.get_colormap import get_colormap
             rgb = get_colormap(name, m=256)        # (256, 3) float 0-1
             lut = np.empty((256, 4), dtype=np.uint8)
             lut[:, :3] = (rgb * 255).astype(np.uint8)

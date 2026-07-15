@@ -14,8 +14,15 @@ orientation; **git history is the source of truth** for what changed.
 - `EMPAD/` — the EMPAD detector's IOC (electron detector, two-image pump/probe).
   `scripts/empad_ioc.py` (new areaDetector-style IOC) + `scripts/python_ioc.py`
   (camserver/trigger controller). Originals in `scripts/original_version/`.
-- `utilities/` — shared helpers (e.g. `today.py` data-dir logic).
+- `BBL/` — shared Python package for scripts/notebooks (`import BBL as bbl`):
+  `pv_tools.py` (cached monitored PVs, `get_pv_avg`, `restore_pvs`),
+  `live_plot.py` (`LivePlot` for ipympl/JupyterLab live plots), `fitting.py`
+  (`polyfit_weights`), `measure_trend.py` (first scan script), `today.py`
+  (data-dir logic), `get_colormap.py`. Lazy `__init__` — importing one
+  helper doesn't drag in matplotlib/pyepics. Was `utilities/` before 2026-07.
 - `matlab_code/` — original MATLAB reference (untracked; reference only).
+  Scan scripts (`center_laser_in_gun/`, `solenoid/`, `utilities/measure_trend/`)
+  are being ported into `BBL/` and adapted to the current accelerator.
 
 ## Architecture in one line
 Every camera is served through the **same areaDetector contract**
