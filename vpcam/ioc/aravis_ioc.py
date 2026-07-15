@@ -207,18 +207,58 @@ class AravisDriver(CameraDriver):
         return int(x), int(y), int(w), int(h)
 
     def set_roi(self, x, y, w, h):
+        """Apply the ROI feature-by-feature, NOT via Camera.set_region().
+
+        set_region() writes OffsetX=0, OffsetY=0, Width, Height, OffsetX,
+        OffsetY with no snapping to the camera's GenICam increments and
+        aborts on the first rejected write — so a single misaligned value
+        (a zoomed beamview selection is four arbitrary numbers) strands
+        the offsets at 0.  Snapping each value to its own bounds/increment
+        and writing the features independently lands any request on the
+        nearest legal region instead.
+        """
         with self._lock:
             was_streaming = self._streaming
             if was_streaming:
                 self._stop_stream()
+            dev = self._cam.get_device()
             try:
-                self._cam.set_region(int(x), int(y), int(w), int(h))
-            except Exception as e:
-                print(f"[aravis] roi: {e}")
+                # Offsets to 0 first so any new size fits; sizes next; the
+                # offset bounds then already account for the new sizes.
+                self._set_int_feature(dev, "OffsetX", 0)
+                self._set_int_feature(dev, "OffsetY", 0)
+                self._set_int_feature(dev, "Width", int(w))
+                self._set_int_feature(dev, "Height", int(h))
+                self._set_int_feature(dev, "OffsetX", int(x))
+                self._set_int_feature(dev, "OffsetY", int(y))
             finally:
                 if was_streaming:
                     self._start_stream()
         return self.get_roi()
+
+    @staticmethod
+    def _set_int_feature(dev, name, value):
+        """Write one integer GenICam feature, snapped to its current
+        min/max/increment (cameras hard-reject misaligned values).
+        Best-effort: a failure is printed, not raised, so the remaining
+        region features still get applied."""
+        v = int(value)
+        try:
+            try:
+                mn, mx = dev.get_integer_feature_bounds(name)
+                v = max(int(mn), min(v, int(mx)))
+            except Exception:
+                mn = 0
+            try:
+                inc = max(1, int(dev.get_integer_feature_increment(name)))
+            except Exception:
+                inc = 1
+            # round down onto the legal grid (min + k*inc); never up, so
+            # offset+size can't creep past the sensor edge
+            v = int(mn) + ((v - int(mn)) // inc) * inc
+            dev.set_integer_feature_value(name, v)
+        except Exception as e:
+            print(f"[aravis] roi {name}={value}: {e}")
 
     # -- exposure / gain ------------------------------------------------------------
 
