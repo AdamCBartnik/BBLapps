@@ -287,10 +287,10 @@ class SnapshotWindow(QMainWindow):
 
         stem = _next_ssss_stem(today_dir, prefix=prefix)
 
-        # ── PNG: grab the window as rendered ─────────────────────────
+        # ── PNG: grab the plot area as rendered (image + axes + colorbar,
+        #    not the surrounding GUI controls) ──────────────────────────
         try:
-            from PyQt5.QtGui import QPixmap
-            pixmap = self.grab()
+            pixmap = self._gfx.grab()
             png_path = stem.with_suffix(".png")
             pixmap.save(str(png_path))
         except Exception as e:
