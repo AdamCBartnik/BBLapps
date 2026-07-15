@@ -317,10 +317,16 @@ class MainWindow(QMainWindow):
         self._subtract_bg_chk = QCheckBox("Subtract BG")
         self._subtract_bg_chk.setEnabled(False)
         self._subtract_bg_chk.toggled.connect(self._trigger_redraw)
+        # Saving is blocked while subtraction is active: the background is
+        # captured from the processed pipeline (post-subtract), so allowing it
+        # would save an already-subtracted image and poison later subtraction
+        # (a quirk the MATLAB version had).
+        self._subtract_bg_chk.toggled.connect(self._save_bg_btn.setDisabled)
         row.addWidget(self._subtract_bg_chk)
         lay.addLayout(row)
 
         self._bg_image = None
+        self._pending_save_bg = False
 
     def _build_range_group(self):
         lay = self._right_group("Intensity Range")
@@ -1175,9 +1181,12 @@ class MainWindow(QMainWindow):
         self._snapshot_windows.append(win)
 
     def _on_save_bg(self):
-        self._bg_image = self._last_raw.copy() if hasattr(self, "_last_raw") else None
-        if self._bg_image is not None:
-            self._subtract_bg_chk.setEnabled(True)
+        # Arms a flag consumed inside _process_and_display (MATLAB's
+        # save_bg_flag): the background is captured AFTER frame averaging, so
+        # averaging N frames and pressing Save BG yields a low-noise
+        # background. The clicked->_trigger_redraw connection makes this work
+        # while paused too.
+        self._pending_save_bg = True
 
     def _on_set_range(self):
         """Snap range to [0, max of current (possibly log-transformed) frame data]."""
@@ -1446,15 +1455,14 @@ class MainWindow(QMainWindow):
                     diff = np.clip(diff, 0, None)
                 img = diff
 
-        # Median filter
-        if self._median_chk.isChecked():
-            from scipy.ndimage import median_filter
-            img = median_filter(img, size=self._median_spin.value())
-
-        # Super-gaussian smoothing
-        if self._sgauss_chk.isChecked():
-            img = self._apply_sgauss(img, self._sgauss_width_spin.value(),
-                                     self._sgauss_power_spin.value())
+        # Threshold, Absolute type — applied per-frame BEFORE averaging and
+        # the filters (MATLAB make_plot.m order: each frame's noise floor is
+        # zeroed before it enters the average). The Percent type is applied
+        # much later, after the software ROI.
+        if (self._threshold_chk.isChecked()
+                and self._threshold_type_combo.currentText() == "Absolute"):
+            cutoff = self._threshold_spin.value()
+            img = np.where(img >= cutoff, img, 0).astype(np.float32)
 
         # Frame averaging — circular buffer + running sum, O(1) per frame
         # (ported from MATLAB make_plot.m, but keeping a raw float64 sum and
@@ -1495,6 +1503,25 @@ class MainWindow(QMainWindow):
         else:
             self._frame_avg_count_lbl.setText("—")
 
+        # Save background — captured HERE, after subtract/threshold/averaging
+        # and before the filters (MATLAB order), so frame averaging can build
+        # a low-noise background. Subtract BG can't be active at this point:
+        # the Save BG button is disabled while it is checked.
+        if self._pending_save_bg:
+            self._pending_save_bg = False
+            self._bg_image = img.copy()
+            self._subtract_bg_chk.setEnabled(True)
+
+        # Median filter (on the averaged image, matching MATLAB)
+        if self._median_chk.isChecked():
+            from scipy.ndimage import median_filter
+            img = median_filter(img, size=self._median_spin.value())
+
+        # Super-gaussian smoothing
+        if self._sgauss_chk.isChecked():
+            img = self._apply_sgauss(img, self._sgauss_width_spin.value(),
+                                     self._sgauss_power_spin.value())
+
         # Rotation
         if self._rotate_chk.isChecked():
             angle = self._rotate_angle_spin.value()
@@ -1502,20 +1529,19 @@ class MainWindow(QMainWindow):
                 from scipy.ndimage import rotate as _rotate
                 img = _rotate(img, angle, reshape=False, order=1).astype(np.float32)
 
-        # Threshold
-        if self._threshold_chk.isChecked():
-            thresh_val = self._threshold_spin.value()
-            if self._threshold_type_combo.currentText() == "Percent":
-                cutoff = (thresh_val / 100.0) * float(img.max())
-            else:
-                cutoff = thresh_val
-            img = np.where(img >= cutoff, img, 0).astype(np.float32)
-
         # Software ROI mask — zero pixels outside the union of all shapes
         # (MATLAB: data(roi)=0), applied only when Enabled.
         if self._sw_roi_chk.isChecked() and self._sw_roi_entries:
             mxx, myy, _ = self._get_display_xy(img.shape[0], img.shape[1])
             img = self._apply_sw_roi(img, mxx, myy)
+
+        # Threshold, Percent type — after the software ROI (MATLAB order:
+        # the cutoff is a percentage of the max INSIDE the ROI, so a bright
+        # artifact outside the ROI can't raise it and wipe out the beam)
+        if (self._threshold_chk.isChecked()
+                and self._threshold_type_combo.currentText() == "Percent"):
+            cutoff = (self._threshold_spin.value() / 100.0) * float(img.max())
+            img = np.where(img >= cutoff, img, 0).astype(np.float32)
 
         # Log transform (applied before range logic, matching MATLAB: log10(1 + |data|))
         if self._log_plot_chk.isChecked():
