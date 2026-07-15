@@ -20,6 +20,9 @@ orientation; **git history is the source of truth** for what changed.
   (`polyfit_weights`), `measure_trend.py` (first scan script), `today.py`
   (data-dir logic), `get_colormap.py`. Lazy `__init__` — importing one
   helper doesn't drag in matplotlib/pyepics. Was `utilities/` before 2026-07.
+  Pip-installable via the root `pyproject.toml`: `pip install -e .` makes
+  `import BBL` work from any directory (done on this machine); beamview and
+  the IOCs are NOT pip-installed — they run from a checkout / copied files.
 - `matlab_code/` — original MATLAB reference (untracked; reference only).
   Scan scripts (`center_laser_in_gun/`, `solenoid/`, `utilities/measure_trend/`)
   are being ported into `BBL/` and adapted to the current accelerator.

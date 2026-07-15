@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bbl"
+version = "0.1.0"
+description = "Bright Beams Lab shared Python utilities: live plots for scans, PV tools, fitting, scan scripts"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+]
+
+[project.optional-dependencies]
+# everything the scan scripts / notebooks need on top of numpy
+scans = [
+    "matplotlib",
+    "ipympl",
+    "pyepics",
+]
+
+# Only BBL is pip-installed; beamview and the vpcam/EMPAD IOCs are run from
+# a repo checkout (or deployed by copying files), same as before.
+[tool.setuptools]
+packages = ["BBL"]
+
+[tool.setuptools.package-data]
+BBL = ["colormaps/*.txt"]
