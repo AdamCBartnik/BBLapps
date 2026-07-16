@@ -35,14 +35,15 @@ def _connect(pvs, timeout=5.0):
             raise TimeoutError(f"PV not connected: {pv.pvname}")
 
 
-def get_pv_avg(pv_names, n_avg=1, pause=0.2, max_pause=5.0):
+def get_pv_avg(pv_names, n_avg=1, pause=0.0, max_pause=5.0):
     """Average n_avg reads of one or more PVs; returns (avg, std).
 
     Each sample waits at least `pause` seconds AND for a fresh monitor
-    update on every PV since the sample started (so consecutive samples
-    are new measurements, not re-reads of a stale value).  If no update
-    arrives within `max_pause` seconds the sample proceeds anyway with
-    the latest known value.
+    update on every PV arriving after the sample started — the cached
+    value is vetoed (labca veto_current_data / wait_until_new_data
+    pattern), so consecutive samples are new measurements, not re-reads
+    of a stale value.  If no update arrives within `max_pause` seconds
+    the sample proceeds anyway with the latest known value.
 
     pv_names may be a single name (returns scalar avg/std) or a sequence
     (returns arrays in the same order).  std is the sample standard

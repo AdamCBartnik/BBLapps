@@ -16,14 +16,19 @@ from .pv_tools import get_pv, get_pv_avg, restore_pvs
 from .fitting import polyfit_weights
 
 
-def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=3.0,
-                  pause=0.25, max_pause=5.0, poly_deg=1, plot=True):
+def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
+                  pause=0.0, max_pause=5.0, poly_deg=1, plot=True):
     """Scan cmd_pv over setpoints and measure the trend of monitor_pvs.
 
     At each setpoint: write cmd_pv, wait `cmd_pause` seconds to settle,
-    then average n_avg reads of each monitor PV (each read waits at
-    least `pause` seconds and for a fresh monitor update, up to
-    `max_pause`; see get_pv_avg, which these two are passed through to).
+    then average n_avg reads of each monitor PV.  Each read waits at
+    least `pause` seconds and for a fresh camonitor update that arrives
+    AFTER the read started, up to `max_pause` (see get_pv_avg, which
+    these two are passed through to).  That fresh-update wait vetoes
+    whatever value is already sitting in the monitor cache — the labca
+    veto_current_data / wait_until_new_data pattern — so the first read
+    after a command change can never be a stale frame, and the defaults
+    (cmd_pause=0, pause=0) simply pace the scan by new data arriving.
     cmd_pv is restored to its initial value at the end, including on
     Ctrl-C / kernel interrupt.
 
