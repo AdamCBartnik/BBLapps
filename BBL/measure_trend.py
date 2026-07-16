@@ -16,16 +16,16 @@ from .pv_tools import get_pv, get_pv_avg, restore_pvs
 from .fitting import polyfit_weights
 
 
-def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, pause=3.0,
-                  sample_pause=0.25, sample_max_pause=5.0, poly_deg=1,
-                  plot=True):
+def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=3.0,
+                  pause=0.25, max_pause=5.0, poly_deg=1, plot=True):
     """Scan cmd_pv over setpoints and measure the trend of monitor_pvs.
 
-    At each setpoint: write cmd_pv, wait `pause` seconds to settle, then
-    average n_avg reads of each monitor PV (each read waits at least
-    sample_pause seconds and for a fresh monitor update, up to
-    sample_max_pause; see get_pv_avg).  cmd_pv is restored to its
-    initial value at the end, including on Ctrl-C / kernel interrupt.
+    At each setpoint: write cmd_pv, wait `cmd_pause` seconds to settle,
+    then average n_avg reads of each monitor PV (each read waits at
+    least `pause` seconds and for a fresh monitor update, up to
+    `max_pause`; see get_pv_avg, which these two are passed through to).
+    cmd_pv is restored to its initial value at the end, including on
+    Ctrl-C / kernel interrupt.
 
     monitor_pvs may be a single name or a sequence.
     poly_deg is the degree of the final weighted fit (None = no fit).
@@ -56,10 +56,9 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, pause=3.0,
         for i, sp in enumerate(setpoints):
             print(f"[{i + 1}/{n_pts}] {cmd_pv} = {sp:g}")
             cmd.put(sp)
-            time.sleep(pause)
+            time.sleep(cmd_pause)
             avg[i], std[i] = get_pv_avg(names, n_avg=n_avg,
-                                        pause=sample_pause,
-                                        max_pause=sample_max_pause)
+                                        pause=pause, max_pause=max_pause)
             for k, lp in enumerate(live_plots):
                 lp.update(setpoints[:i + 1], avg[:i + 1, k],
                           y_err=std[:i + 1, k])
