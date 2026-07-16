@@ -31,7 +31,15 @@ __all__ = sorted(_lazy)
 def __getattr__(name):
     if name in _lazy:
         module = importlib.import_module(_lazy[name], __name__)
-        return getattr(module, name)
+        attr = getattr(module, name)
+        # Cache the resolved object in the package namespace.  Not just an
+        # optimization: importing a submodule binds it as a package attribute,
+        # so where a function shares its module's name (measure_trend,
+        # get_colormap) the module would shadow the function on every access
+        # after the first ('module' object is not callable).  This overwrite
+        # puts the function back on top.
+        globals()[name] = attr
+        return attr
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
