@@ -17,7 +17,8 @@ from .fitting import polyfit_weights
 
 
 def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
-                  pause=0.0, max_pause=5.0, poly_deg=1, plot=True):
+                  pause=0.0, max_pause=5.0, poly_deg=1, plot=True,
+                  fresh=True):
     """Scan cmd_pv over setpoints and measure the trend of monitor_pvs.
 
     At each setpoint: write cmd_pv (confirmed, caput wait=True), wait
@@ -30,6 +31,12 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
     veto_current_data / wait_until_new_data pattern — so the first read
     after a command change can never be a stale frame, and the defaults
     (cmd_pause=0, pause=0) simply pace the scan by new data arriving.
+    If a monitor PV stops updating for max_pause seconds, that scan
+    point comes back NaN (caget bails out rather than average stale
+    data); the plot shows a gap there and the final fit skips it.
+    That veto assumes monitors that update continuously (beamview
+    stats).  For monitor PVs that only post on CHANGE (e.g. a settled
+    readback), pass fresh=False to sample the cached values instead.
     cmd_pv is restored to its initial value at the end, including on
     Ctrl-C / kernel interrupt.
 
@@ -63,7 +70,7 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
             caput(cmd_pv, sp)
             time.sleep(cmd_pause)
             avg[i], std[i] = _sample(names, n_avg=n_avg, pause=pause,
-                                     max_pause=max_pause, fresh=True)
+                                     max_pause=max_pause, fresh=fresh)
             for k, lp in enumerate(live_plots):
                 lp.update(setpoints[:i + 1], avg[:i + 1, k],
                           y_err=std[:i + 1, k])

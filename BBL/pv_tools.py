@@ -54,8 +54,10 @@ def _sample(names, n_avg, pause, max_pause, fresh):
     camonitor update on every PV arriving after the sample started — the
     cached value is vetoed (labca veto_current_data / wait_until_new_data
     pattern), so consecutive samples are new measurements, not re-reads
-    of a stale value.  If no update arrives within `max_pause` seconds
-    the sample proceeds anyway with the latest known value.
+    of a stale value.  If any connected PV delivers no update within
+    `max_pause` seconds, the whole read BAILS OUT and returns all-NaN
+    (with the stale PVs printed): no stale data, and no repeating the
+    wait for every remaining sample.
 
     Unreachable PVs yield NaN.  std is the sample standard deviation
     (ddof=1); zeros when n_avg == 1.
@@ -70,12 +72,17 @@ def _sample(names, n_avg, pause, max_pause, fresh):
             t0 = time.monotonic()
             while True:
                 elapsed = time.monotonic() - t0
-                if elapsed >= max_pause:
-                    break
                 if (elapsed >= pause
                         and all(not c or _update_counts.get(n, 0) > marks[n]
                                 for n, c in zip(names, connected))):
                     break
+                if elapsed >= max_pause:
+                    stale = [n for n, c in zip(names, connected)
+                             if c and _update_counts.get(n, 0) <= marks[n]]
+                    print(f"[caget] no fresh update within {max_pause:g} s "
+                          f"({', '.join(stale)}) — returning nan")
+                    nan = np.full(len(names), np.nan)
+                    return nan, nan.copy()
                 time.sleep(0.01)
         elif pause > 0:
             time.sleep(pause)
@@ -105,8 +112,9 @@ def caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, fresh=None):
     n_avg > 1 averages repeated samples and returns (avg, std) instead.
     Sampling then uses the fresh-update veto: each sample waits at least
     `pause` seconds AND for a new camonitor update arriving after the
-    sample started (up to `max_pause`), so every sample is a genuinely
-    new measurement — see _sample.
+    sample started, so every sample is a genuinely new measurement.  If
+    any PV goes `max_pause` seconds without an update the whole read
+    bails out and returns NaN — see _sample.
 
     fresh overrides the veto default (None = veto only when n_avg > 1):
     fresh=True makes even a single read wait for the next update,

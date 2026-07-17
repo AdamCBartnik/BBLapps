@@ -21,10 +21,24 @@ def polyfit_weights(x, y, y_err=None, deg=1):
     y, an unweighted fit is done and the returned errors/covariance are
     zero — also matching the MATLAB version.  Nonpositive y_err entries
     are replaced with the smallest positive entry.
+
+    Non-finite points (NaN/inf in x, y, or y_err — e.g. a scan point
+    where caget bailed out) are dropped before fitting.  If fewer than
+    deg+1 finite points remain, everything returned is NaN.
     """
     x = np.asarray(x, dtype=float).ravel()
     y = np.asarray(y, dtype=float).ravel()
     n_coef = deg + 1
+
+    finite = np.isfinite(x) & np.isfinite(y)
+    if y_err is not None:
+        y_err = np.asarray(y_err, dtype=float).ravel()
+        finite &= np.isfinite(y_err)
+        y_err = y_err[finite]
+    x, y = x[finite], y[finite]
+    if x.size < n_coef:
+        return (np.full(n_coef, np.nan), np.full(n_coef, np.nan),
+                np.full((n_coef, n_coef), np.nan))
 
     unweighted = y_err is None
     if not unweighted:
