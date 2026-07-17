@@ -54,13 +54,19 @@ https://github.com/AravisProject/aravis/issues/921, still open; the
 camera's own pgrPixelBigEndian feature doesn't help).  The symptom is
 noise-like images with wild banding.  It's up to whoever runs the IOC to
 know their camera needs this.
+
+Calibration persistence: cam1:CalibX/Y (um/pixel) are saved to
+calib_<PREFIX>.json next to this script on every write and reloaded at
+startup, so the viewscreen scale survives IOC restarts.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import threading
+from pathlib import Path
 
 import numpy as np
 
@@ -75,7 +81,8 @@ class AravisDriver(CameraDriver):
     manufacturer = "GigE Vision"
     extension_pvs: list = []
 
-    def __init__(self, ip_address: str, swap_endian: bool = False):
+    def __init__(self, ip_address: str, swap_endian: bool = False,
+                 calib_file: str | None = None):
         import gi
         gi.require_version("Aravis", "0.8")
         from gi.repository import Aravis
@@ -85,6 +92,12 @@ class AravisDriver(CameraDriver):
         # assumes little-endian (Blackfly; aravis issue #921). User-declared
         # at startup — there's no reliable way to probe it.
         self._swap_endian = bool(swap_endian)
+
+        # cam1:CalibX/Y (um/px) persistence: a tiny JSON file keyed by the
+        # served EPICS prefix (not the camera IP — some cameras get DHCP
+        # addresses). Loaded by ad_ioc_base at startup, rewritten on every
+        # calibration put. None = PV-only, lost on restart.
+        self._calib_file = Path(calib_file) if calib_file else None
 
         # Direct unicast connection — no discovery broadcast involved
         self._cam = Aravis.Camera.new(ip_address)
@@ -259,6 +272,32 @@ class AravisDriver(CameraDriver):
             dev.set_integer_feature_value(name, v)
         except Exception as e:
             print(f"[aravis] roi {name}={value}: {e}")
+
+    # -- calibration persistence ---------------------------------------------------
+
+    def load_calibration(self):
+        f = self._calib_file
+        if f is None or not f.exists():
+            return None
+        try:
+            d = json.loads(f.read_text())
+            return float(d["calib_x_um"]), float(d["calib_y_um"])
+        except Exception as e:
+            print(f"[aravis] calibration load ({f}): {e}")
+            return None
+
+    def save_calibration(self, cal_x_um, cal_y_um):
+        f = self._calib_file
+        if f is None:
+            return
+        try:
+            tmp = f.with_name(f.name + ".tmp")
+            tmp.write_text(json.dumps({"calib_x_um": float(cal_x_um),
+                                       "calib_y_um": float(cal_y_um)},
+                                      indent=2) + "\n")
+            tmp.replace(f)   # atomic-ish: no torn file on a crash mid-write
+        except Exception as e:
+            print(f"[aravis] calibration save ({f}): {e}")
 
     # -- exposure / gain ------------------------------------------------------------
 
@@ -481,7 +520,15 @@ def main():
     prefix = args.prefix.rstrip(":")
 
     print(f"[aravis] camera {args.camera_ip}  ->  {prefix}:")
-    driver = AravisDriver(args.camera_ip, swap_endian=args.swap_endian)
+
+    # Persist cam1:CalibX/Y next to this script, keyed by prefix so the
+    # calibration follows the camera name, not a (possibly DHCP) IP.
+    calib_file = Path(__file__).resolve().parent / f"calib_{prefix}.json"
+    state = "found" if calib_file.exists() else "created on first write"
+    print(f"[aravis] calibration file: {calib_file} ({state})")
+
+    driver = AravisDriver(args.camera_ip, swap_endian=args.swap_endian,
+                          calib_file=calib_file)
 
     IOCClass = build_ioc_class(AravisDriver)
     ioc_options, run_options = ioc_arg_parser(
