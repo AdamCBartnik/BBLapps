@@ -7,3 +7,4 @@ dist/
 build/
 .eggs/
 calib_*.json
+.calib_*.json

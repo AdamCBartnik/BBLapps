@@ -56,8 +56,10 @@ noise-like images with wild banding.  It's up to whoever runs the IOC to
 know their camera needs this.
 
 Calibration persistence: cam1:CalibX/Y (um/pixel) are saved to
-calib_<PREFIX>.json next to this script on every write and reloaded at
-startup, so the viewscreen scale survives IOC restarts.
+.calib_<PREFIX>.json in the directory the IOC is launched from (cwd, not
+the script dir — the IOC user may not have write permission there) on
+every write and reloaded at startup, so the viewscreen scale survives
+IOC restarts.  Launch from the same directory to keep the calibration.
 """
 
 from __future__ import annotations
@@ -521,9 +523,11 @@ def main():
 
     print(f"[aravis] camera {args.camera_ip}  ->  {prefix}:")
 
-    # Persist cam1:CalibX/Y next to this script, keyed by prefix so the
-    # calibration follows the camera name, not a (possibly DHCP) IP.
-    calib_file = Path(__file__).resolve().parent / f"calib_{prefix}.json"
+    # Persist cam1:CalibX/Y in the directory the IOC is launched from
+    # (the script dir may not be writable by the IOC user), keyed by
+    # prefix so the calibration follows the camera name, not a
+    # (possibly DHCP) IP.
+    calib_file = Path.cwd() / f".calib_{prefix}.json"
     state = "found" if calib_file.exists() else "created on first write"
     print(f"[aravis] calibration file: {calib_file} ({state})")
 
