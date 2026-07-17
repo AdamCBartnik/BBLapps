@@ -12,7 +12,7 @@ import time
 import numpy as np
 
 from .live_plot import LivePlot
-from .pv_tools import get_pv, get_pv_avg, restore_pvs
+from .pv_tools import _sample, caput, restore_pvs
 from .fitting import polyfit_weights
 
 
@@ -20,11 +20,12 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
                   pause=0.0, max_pause=5.0, poly_deg=1, plot=True):
     """Scan cmd_pv over setpoints and measure the trend of monitor_pvs.
 
-    At each setpoint: write cmd_pv, wait `cmd_pause` seconds to settle,
-    then average n_avg reads of each monitor PV.  Each read waits at
-    least `pause` seconds and for a fresh camonitor update that arrives
-    AFTER the read started, up to `max_pause` (see get_pv_avg, which
-    these two are passed through to).  That fresh-update wait vetoes
+    At each setpoint: write cmd_pv (confirmed, caput wait=True), wait
+    `cmd_pause` seconds to settle, then average n_avg reads of each
+    monitor PV.  Each read waits at least `pause` seconds and for a
+    fresh camonitor update that arrives AFTER the read started, up to
+    `max_pause` (bbl.caget semantics with fresh=True — the veto applies
+    even when n_avg=1).  That fresh-update wait vetoes
     whatever value is already sitting in the monitor cache — the labca
     veto_current_data / wait_until_new_data pattern — so the first read
     after a command change can never be a stale frame, and the defaults
@@ -57,13 +58,12 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
         fig.tight_layout()
 
     with restore_pvs(cmd_pv):
-        cmd = get_pv(cmd_pv)
         for i, sp in enumerate(setpoints):
             print(f"[{i + 1}/{n_pts}] {cmd_pv} = {sp:g}")
-            cmd.put(sp)
+            caput(cmd_pv, sp)
             time.sleep(cmd_pause)
-            avg[i], std[i] = get_pv_avg(names, n_avg=n_avg,
-                                        pause=pause, max_pause=max_pause)
+            avg[i], std[i] = _sample(names, n_avg=n_avg, pause=pause,
+                                     max_pause=max_pause, fresh=True)
             for k, lp in enumerate(live_plots):
                 lp.update(setpoints[:i + 1], avg[:i + 1, k],
                           y_err=std[:i + 1, k])

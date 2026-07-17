@@ -2,14 +2,18 @@
 pyepics helpers shared by scan scripts.
 
 - get_pv(name)        cached, auto-monitored epics.PV
-- get_pv_avg(...)     averaged read that waits for fresh camonitor values
+- caget(...)          read via the monitor cache; averaging + fresh-update veto
+- caput(...)          write; wait=True (lcaPut) or wait=False (lcaPutNoWait)
 - restore_pvs(...)    context manager: put values back on exit / Ctrl-C
 """
 import time
+import warnings
 from contextlib import contextmanager
 
 import numpy as np
 import epics
+
+_CONNECT_TIMEOUT = 5.0
 
 _pv_cache = {}
 _update_counts = {}   # pvname -> number of monitor updates seen
@@ -29,56 +33,142 @@ def get_pv(name):
     return pv
 
 
-def _connect(pvs, timeout=5.0):
+def _connect(pvs, required=True):
+    """Wait for connections. required=True raises on failure; otherwise
+    prints a warning and returns a list of connected flags."""
+    ok = []
     for pv in pvs:
-        if not pv.wait_for_connection(timeout=timeout):
-            raise TimeoutError(f"PV not connected: {pv.pvname}")
+        connected = pv.wait_for_connection(timeout=_CONNECT_TIMEOUT)
+        if not connected:
+            if required:
+                raise TimeoutError(f"PV not connected: {pv.pvname}")
+            print(f"[caget/caput] PV not connected: {pv.pvname}")
+        ok.append(connected)
+    return ok
 
 
-def get_pv_avg(pv_names, n_avg=1, pause=0.0, max_pause=5.0):
-    """Average n_avg reads of one or more PVs; returns (avg, std).
+def _sample(names, n_avg, pause, max_pause, fresh):
+    """Sample the named PVs n_avg times; always returns (avg, std) arrays.
 
-    Each sample waits at least `pause` seconds AND for a fresh monitor
-    update on every PV arriving after the sample started — the cached
-    value is vetoed (labca veto_current_data / wait_until_new_data
+    With fresh=True each sample waits at least `pause` seconds AND for a
+    camonitor update on every PV arriving after the sample started — the
+    cached value is vetoed (labca veto_current_data / wait_until_new_data
     pattern), so consecutive samples are new measurements, not re-reads
     of a stale value.  If no update arrives within `max_pause` seconds
     the sample proceeds anyway with the latest known value.
 
-    pv_names may be a single name (returns scalar avg/std) or a sequence
-    (returns arrays in the same order).  std is the sample standard
-    deviation (ddof=1); zero when n_avg == 1.
+    Unreachable PVs yield NaN.  std is the sample standard deviation
+    (ddof=1); zeros when n_avg == 1.
     """
-    single = isinstance(pv_names, str)
-    names = [pv_names] if single else list(pv_names)
     pvs = [get_pv(n) for n in names]
-    _connect(pvs)
+    connected = _connect(pvs, required=False)
 
     samples = np.full((n_avg, len(names)), np.nan)
     for i in range(n_avg):
-        marks = {n: _update_counts.get(n, 0) for n in names}
-        t0 = time.monotonic()
-        while True:
-            elapsed = time.monotonic() - t0
-            if elapsed >= max_pause:
-                break
-            if (elapsed >= pause
-                    and all(_update_counts.get(n, 0) > marks[n]
-                            for n in names)):
-                break
-            time.sleep(0.01)
-        for k, pv in enumerate(pvs):
-            v = pv.value
+        if fresh:
+            marks = {n: _update_counts.get(n, 0) for n in names}
+            t0 = time.monotonic()
+            while True:
+                elapsed = time.monotonic() - t0
+                if elapsed >= max_pause:
+                    break
+                if (elapsed >= pause
+                        and all(not c or _update_counts.get(n, 0) > marks[n]
+                                for n, c in zip(names, connected))):
+                    break
+                time.sleep(0.01)
+        elif pause > 0:
+            time.sleep(pause)
+        for k, (pv, c) in enumerate(zip(pvs, connected)):
+            v = pv.value if c else None
             samples[i, k] = np.nan if v is None else float(v)
 
-    avg = np.nanmean(samples, axis=0)
-    if n_avg > 1:
-        std = np.nanstd(samples, axis=0, ddof=1)
-    else:
-        std = np.zeros(len(names))
-    if single:
-        return float(avg[0]), float(std[0])
+    # an unreachable PV leaves an all-NaN column; nanmean/nanstd warn on
+    # those but correctly return NaN, which is exactly what we want
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        avg = np.nanmean(samples, axis=0)
+        if n_avg > 1:
+            std = np.nanstd(samples, axis=0, ddof=1)
+        else:
+            std = np.zeros(len(names))
     return avg, std
+
+
+def caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, fresh=None):
+    """Read one or more PVs via the monitor cache (never raises).
+
+    caget('PV') returns the current value immediately, like lcaGet;
+    an unreachable PV gives NaN (after a connection wait, first time).
+    A sequence of names returns an array of values.
+
+    n_avg > 1 averages repeated samples and returns (avg, std) instead.
+    Sampling then uses the fresh-update veto: each sample waits at least
+    `pause` seconds AND for a new camonitor update arriving after the
+    sample started (up to `max_pause`), so every sample is a genuinely
+    new measurement — see _sample.
+
+    fresh overrides the veto default (None = veto only when n_avg > 1):
+    fresh=True makes even a single read wait for the next update,
+    fresh=False makes averaging free-run on the cache.
+    """
+    single = isinstance(pv_names, str)
+    names = [pv_names] if single else list(pv_names)
+    if fresh is None:
+        fresh = n_avg > 1
+
+    avg, std = _sample(names, n_avg, pause, max_pause, fresh)
+
+    if n_avg > 1:
+        if single:
+            return float(avg[0]), float(std[0])
+        return avg, std
+    if single:
+        return float(avg[0])
+    return avg
+
+
+def caput(pv_names, values, wait=True, timeout=5.0):
+    """Write one or more PVs.
+
+    wait=True (default) blocks until the IOC confirms the record has
+    processed, like lcaPut; wait=False fires the write and returns
+    immediately, like lcaPutNoWait.  `timeout` bounds the wait.
+
+    pv_names may be a single name or a sequence; a scalar value is
+    broadcast across a sequence of names.  Returns True if every put was
+    delivered (and, with wait=True, confirmed) — otherwise False, with
+    the failure printed rather than raised.
+    """
+    single = isinstance(pv_names, str)
+    names = [pv_names] if single else list(pv_names)
+    if single:
+        vals = [values]
+    elif np.isscalar(values):
+        vals = [values] * len(names)
+    else:
+        vals = list(values)
+        if len(vals) != len(names):
+            raise ValueError(f"{len(names)} PVs but {len(vals)} values")
+
+    pvs = [get_pv(n) for n in names]
+    connected = _connect(pvs, required=False)
+
+    ok = True
+    for pv, c, v in zip(pvs, connected, vals):
+        if not c:
+            ok = False
+            continue
+        try:
+            ret = pv.put(v, wait=wait, timeout=timeout)
+            if wait and ret != 1:
+                print(f"[caput] {pv.pvname} = {v}: not confirmed "
+                      f"within {timeout} s")
+                ok = False
+        except Exception as e:
+            print(f"[caput] {pv.pvname} = {v}: {e}")
+            ok = False
+    return ok
 
 
 @contextmanager
@@ -91,10 +181,12 @@ def restore_pvs(*pv_names):
         with restore_pvs('MA1CHA01_cmd', 'MA1CVA01_cmd'):
             ... scan ...
 
-    Yields a dict {pv_name: initial_value}.
+    Yields a dict {pv_name: initial_value}.  Unlike caget/caput this
+    RAISES if a PV doesn't connect: silently scanning something that
+    can't be restored would be worse than stopping.
     """
     pvs = [get_pv(n) for n in pv_names]
-    _connect(pvs)
+    _connect(pvs, required=True)
     initial = [pv.get() for pv in pvs]
     try:
         yield dict(zip(pv_names, initial))
