@@ -1,4 +1,13 @@
 """
+RETIRED (2026-07-16) — superseded by aravis_ioc.py for all deployments.
+
+This is the vendor-GenTL (harvesters) implementation; it needs a vendor
+SDK's .cti producer, which the old lab machines can't run. aravis_ioc.py
+does the same job vendor-free and is what actually runs everywhere. Kept
+only in case a camera ever needs a vendor-SDK-only GenICam feature.
+Note it predates later contract additions (e.g. calibration persistence,
+--swap-endian) — bring it up to date before reviving it.
+
 gige_ioc.py — standalone IOC for GigE Vision cameras via Harvester.
 
 Runs on a machine that shares a subnet with the camera (GigE Vision

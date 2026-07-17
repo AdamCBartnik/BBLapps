@@ -6,7 +6,7 @@ developing/testing any contract client (beamview, the web UI, a gateway)
 anywhere — including Windows. It is deliberately NOT a vpcam_launcher camera
 type: the mock has no hardware, no persisted settings, and nothing
 VPCam-specific, so the config.yaml machinery would be pure overhead. Like
-gateway_ioc.py / gige_ioc.py, it is a standalone, arg-driven tool.
+gateway_ioc.py / aravis_ioc.py, it is a standalone, arg-driven tool.
 
 It is a dual-frame ("double") camera: each acquisition publishes TWO raw
 Gaussian frames, image1 = "cold" and image2 = "hot" (~10% dimmer), so a

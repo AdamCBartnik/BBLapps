@@ -30,7 +30,7 @@ def resolve_driver_class(config):
     """Return the driver class for camera.type.
 
     Only Pi-resident camera types live here.  GigE cameras and the CA
-    gateway never run on a Pi — use the standalone gige_ioc.py and
+    gateway never run on a Pi — use the standalone aravis_ioc.py and
     gateway_ioc.py instead."""
     return DRIVER_MAP.get(config['camera']['type'])
 

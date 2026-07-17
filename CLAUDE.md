@@ -10,7 +10,9 @@ orientation; **git history is the source of truth** for what changed.
 - `vpcam/ioc/` — camera IOCs (caproto) serving a standard **EPICS areaDetector**
   PV contract. `ad_ioc_base.py` is the one shared contract module; per-backend
   drivers sit on top. Standalone tools: `mock_ioc.py`, `gateway_ioc.py`,
-  `gige_ioc.py`, `aravis_ioc.py`, plus `vpcam_launcher.py` (Pi cameras).
+  `aravis_ioc.py` (all GigE cameras), plus `vpcam_launcher.py` (Pi cameras).
+  Retired code lives in `vpcam/ioc/attic/` (e.g. the old vendor-GenTL
+  `gige_ioc.py`).
 - `EMPAD/` — the EMPAD detector's IOC (electron detector, two-image pump/probe).
   `scripts/empad_ioc.py` (new areaDetector-style IOC) + `scripts/python_ioc.py`
   (camserver/trigger controller). Originals in `scripts/original_version/`.

@@ -1,11 +1,11 @@
 """
 aravis_ioc.py — standalone IOC for GigE Vision cameras via Aravis.
 
-Same job and same CLI shape as gige_ioc.py, but built on Aravis (a
-vendor-neutral GigE Vision implementation) instead of a vendor GenTL
-producer + harvesters.  Exists for machines too old to run modern vendor
+Built on Aravis (a vendor-neutral GigE Vision implementation) rather than
+a vendor GenTL producer, so it runs on machines too old for modern vendor
 SDKs (vendor .cti files are binaries with glibc requirements; Aravis can be
-compiled into a conda env on anything, glibc 2.17 included).
+compiled into a conda env on anything, glibc 2.17 included).  This is THE
+GigE IOC — the older vendor-GenTL gige_ioc.py is retired in attic/.
 
     python aravis_ioc.py 192.168.136.23 B24Screen1
         -> serves B24Screen1:cam1:..., B24Screen1:image1:...
