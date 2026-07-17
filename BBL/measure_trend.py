@@ -18,7 +18,7 @@ from .fitting import polyfit_weights
 
 def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
                   pause=0.0, max_pause=5.0, poly_deg=1, plot=True,
-                  fresh=True):
+                  fresh=None):
     """Scan cmd_pv over setpoints and measure the trend of monitor_pvs.
 
     At each setpoint: write cmd_pv (confirmed, caput wait=True), wait
@@ -31,12 +31,15 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
     veto_current_data / wait_until_new_data pattern — so the first read
     after a command change can never be a stale frame, and the defaults
     (cmd_pause=0, pause=0) simply pace the scan by new data arriving.
-    If a monitor PV stops updating for max_pause seconds, that scan
-    point comes back NaN (caget bails out rather than average stale
-    data); the plot shows a gap there and the final fit skips it.
-    That veto assumes monitors that update continuously (beamview
-    stats).  For monitor PVs that only post on CHANGE (e.g. a settled
-    readback), pass fresh=False to sample the cached values instead.
+    With pause == 0 (default) sampling is camonitor-paced with the
+    fresh-update veto: if a monitor PV stops updating for max_pause
+    seconds, that scan point comes back NaN (bail out rather than
+    average stale data); the plot shows a gap there and the final fit
+    skips it.  That assumes monitors that update continuously (beamview
+    stats).  A pause > 0 switches to time-paced sampling of the cached
+    values (no freshness demand) — right for monitor PVs that only post
+    on change, e.g. settled readbacks.  fresh=True/False overrides
+    either default explicitly.
     cmd_pv is restored to its initial value at the end, including on
     Ctrl-C / kernel interrupt.
 
@@ -63,6 +66,9 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
             live_plots.append(LivePlot(ylabel=name, ax=ax))
         axes[-1, 0].set_xlabel(cmd_pv)
         fig.tight_layout()
+
+    if fresh is None:
+        fresh = pause == 0     # same rule as caget: a pause means time-paced
 
     with restore_pvs(cmd_pv):
         for i, sp in enumerate(setpoints):

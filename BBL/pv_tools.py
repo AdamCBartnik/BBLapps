@@ -110,20 +110,25 @@ def caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, fresh=None):
     A sequence of names returns an array of values.
 
     n_avg > 1 averages repeated samples and returns (avg, std) instead.
-    Sampling then uses the fresh-update veto: each sample waits at least
-    `pause` seconds AND for a new camonitor update arriving after the
-    sample started, so every sample is a genuinely new measurement.  If
-    any PV goes `max_pause` seconds without an update the whole read
-    bails out and returns NaN — see _sample.
+    How sampling is paced depends on `pause`:
 
-    fresh overrides the veto default (None = veto only when n_avg > 1):
-    fresh=True makes even a single read wait for the next update,
-    fresh=False makes averaging free-run on the cache.
+      pause == 0 (default): camonitor-paced.  Each sample waits for a
+        new update arriving after the sample started (the fresh-update
+        veto), so every sample is a genuinely new measurement.  If any
+        PV goes `max_pause` seconds without an update the whole read
+        bails out and returns NaN — see _sample.
+      pause > 0: time-paced.  Samples are taken every `pause` seconds
+        from the monitor cache, fresh or not — for records that only
+        update when commanded.
+
+    fresh overrides that default (None = veto only when n_avg > 1 and
+    pause == 0): fresh=True demands new updates even with a pause (and
+    for single reads), fresh=False free-runs on the cache.
     """
     single = isinstance(pv_names, str)
     names = [pv_names] if single else list(pv_names)
     if fresh is None:
-        fresh = n_avg > 1
+        fresh = n_avg > 1 and pause == 0
 
     avg, std = _sample(names, n_avg, pause, max_pause, fresh)
 
