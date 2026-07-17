@@ -11,14 +11,14 @@ import time
 
 import numpy as np
 
-from .live_plot import LivePlot
+from .live_plot import LivePlot, display_canvas
 from .pv_tools import _sample, caput, restore_pvs
 from .fitting import polyfit_weights
 
 
 def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
                   pause=0.0, max_pause=5.0, poly_deg=1, plot=True,
-                  fresh=None):
+                  fresh=None, verbose=False):
     """Scan cmd_pv over setpoints and measure the trend of monitor_pvs.
 
     At each setpoint: write cmd_pv (confirmed, caput wait=True), wait
@@ -45,6 +45,7 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
 
     monitor_pvs may be a single name or a sequence.
     poly_deg is the degree of the final weighted fit (None = no fit).
+    verbose=True prints per-setpoint progress.
 
     Returns a dict with setpoints, avg / std arrays of shape
     (n_points, n_monitors), fits {monitor_pv: (coeffs, coeff_errs)},
@@ -60,19 +61,26 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
     live_plots = []
     if plot:
         import matplotlib.pyplot as plt
-        fig, axes = plt.subplots(len(names), 1, sharex=True, squeeze=False,
-                                 figsize=(6.0, 3.0 * len(names)))
+        # ioff + explicit display: show the widget NOW, mid-cell, instead
+        # of relying on the end-of-cell auto-display (which would keep the
+        # plot invisible for the whole scan)
+        with plt.ioff():
+            fig, axes = plt.subplots(len(names), 1, sharex=True,
+                                     squeeze=False,
+                                     figsize=(6.0, 3.0 * len(names)))
         for name, ax in zip(names, axes[:, 0]):
             live_plots.append(LivePlot(ylabel=name, ax=ax))
         axes[-1, 0].set_xlabel(cmd_pv)
         fig.tight_layout()
+        display_canvas(fig)
 
     if fresh is None:
         fresh = pause == 0     # same rule as caget: a pause means time-paced
 
     with restore_pvs(cmd_pv):
         for i, sp in enumerate(setpoints):
-            print(f"[{i + 1}/{n_pts}] {cmd_pv} = {sp:g}")
+            if verbose:
+                print(f"[{i + 1}/{n_pts}] {cmd_pv} = {sp:g}")
             caput(cmd_pv, sp)
             time.sleep(cmd_pause)
             avg[i], std[i] = _sample(names, n_avg=n_avg, pause=pause,

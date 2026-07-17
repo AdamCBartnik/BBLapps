@@ -17,6 +17,22 @@ import matplotlib.pyplot as plt
 from .fitting import polyfit_weights
 
 
+def display_canvas(fig):
+    """Display an ipympl figure widget immediately (works mid-cell).
+
+    A figure created inside a running cell is normally only shown when
+    the cell ends — useless for a scan that plots as it goes.  No-op
+    outside Jupyter (plain scripts, Agg).
+    """
+    if not hasattr(fig.canvas, "_model_id"):
+        return  # not a Jupyter widget canvas — auto-display handles it
+    try:
+        from IPython.display import display
+        display(fig.canvas)
+    except Exception:
+        pass
+
+
 class LivePlot:
     """A matplotlib (error bar) plot that updates in place during a scan.
 
@@ -28,7 +44,11 @@ class LivePlot:
     def __init__(self, xlabel="", ylabel="", title="", ax=None,
                  style="ro", capsize=3):
         if ax is None:
-            self.fig, self.ax = plt.subplots()
+            # ioff: keep pyplot from ALSO auto-displaying the figure at the
+            # end of the cell (we display the widget ourselves, right now)
+            with plt.ioff():
+                self.fig, self.ax = plt.subplots()
+            display_canvas(self.fig)
         else:
             self.ax = ax
             self.fig = ax.figure
@@ -109,7 +129,12 @@ class LivePlot:
         if self.ax.get_autoscalex_on() or self.ax.get_autoscaley_on():
             self.ax.relim()
             self.ax.autoscale_view()
-        self.fig.canvas.draw_idle()
+        # A synchronous draw(), NOT draw_idle(): under ipympl, draw_idle
+        # needs a kernel<->browser round trip that can't complete while a
+        # cell is blocked in a scan loop, so nothing would appear until
+        # the scan finished. draw() renders in the kernel and pushes the
+        # frame to the browser directly.
+        self.fig.canvas.draw()
         try:
             self.fig.canvas.flush_events()
         except NotImplementedError:
