@@ -18,6 +18,38 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+_warmup_done = False
+
+
+def warmup():
+    """Prime Jupyter's widget machinery after a kernel (re)start.
+
+    The first widget displayed in a fresh kernel session triggers a
+    frontend<->kernel handshake that cannot complete while a scan has
+    the kernel blocked — so the first live plot of a session would stay
+    invisible until its scan finished.  Run bbl.warmup() in a cell right
+    after `%matplotlib widget`: it displays a hidden throwaway canvas,
+    and the handshake completes the moment that cell ends.  Repeat calls
+    (and calls outside Jupyter) do nothing.
+    """
+    global _warmup_done
+    if _warmup_done:
+        return
+    with plt.ioff():
+        fig = plt.figure(figsize=(0.01, 0.01))
+    if not hasattr(fig.canvas, "_model_id"):
+        plt.close(fig)   # not a widget backend — nothing to prime
+        return
+    try:
+        fig.canvas.layout.display = "none"   # create the view, invisibly
+    except Exception:
+        pass
+    display_canvas(fig)
+    # NOTE: the figure is deliberately kept open (pyplot holds it) — closing
+    # it would tear down the very widget the frontend is initializing on
+    _warmup_done = True
+
+
 def set_plot_interactive(fig, enabled=True):
     """Enable/disable ALL mouse interaction with an ipympl figure.
 

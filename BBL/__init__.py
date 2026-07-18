@@ -24,6 +24,7 @@ _lazy = {
     "restore_pvs": ".pv_tools",
     "LivePlot": ".live_plot",
     "set_plot_interactive": ".live_plot",
+    "warmup": ".live_plot",
     "polyfit_weights": ".fitting",
     "measure_trend": ".measure_trend",
 }
