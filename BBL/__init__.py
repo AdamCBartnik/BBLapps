@@ -18,6 +18,8 @@ _lazy = {
     "get_colormap": ".get_colormap",
     "get_todays_directory": ".today",
     "caget": ".pv_tools",
+    "center_laser_in_gun": ".center_laser_in_gun",
+    "fit_gun_aberration": ".center_laser_in_gun",
     "caput": ".pv_tools",
     "restore_pvs": ".pv_tools",
     "LivePlot": ".live_plot",

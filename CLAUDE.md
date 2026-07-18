@@ -17,11 +17,14 @@ orientation; **git history is the source of truth** for what changed.
   `scripts/empad_ioc.py` (new areaDetector-style IOC) + `scripts/python_ioc.py`
   (camserver/trigger controller). Originals in `scripts/original_version/`.
 - `BBL/` — shared Python package for scripts/notebooks (`import BBL as bbl`):
-  `pv_tools.py` (cached monitored PVs, `get_pv_avg`, `restore_pvs`),
-  `live_plot.py` (`LivePlot` for ipympl/JupyterLab live plots), `fitting.py`
-  (`polyfit_weights`), `measure_trend.py` (first scan script), `today.py`
-  (data-dir logic), `get_colormap.py`. Lazy `__init__` — importing one
-  helper doesn't drag in matplotlib/pyepics. Was `utilities/` before 2026-07.
+  `pv_tools.py` (`caget`/`caput`/`restore_pvs` — monitor-cached, fresh-update
+  veto, NaN on failure), `live_plot.py` (`LivePlot` + interactivity freeze
+  for ipympl/JupyterLab), `fitting.py` (`polyfit_weights`),
+  `measure_trend.py` and `center_laser_in_gun.py` (ported scan scripts),
+  `today.py` (data-dir logic), `get_colormap.py`. A local untracked
+  `demo_ioc.py` (gitignored) simulates PVs incl. a mini gun for testing.
+  Lazy `__init__` — importing one helper doesn't drag in matplotlib/pyepics.
+  Was `utilities/` before 2026-07.
   Pip-installable via the root `pyproject.toml`: `pip install -e .` makes
   `import BBL` work from any directory (done on this machine); beamview and
   the IOCs are NOT pip-installed — they run from a checkout / copied files.
