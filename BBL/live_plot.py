@@ -9,12 +9,13 @@ and zooming/panning with the figure toolbar is preserved across updates.
     for i in range(n):
         ...measure point i...
         lp.update(x[:i+1], y[:i+1], y_err=err[:i+1])
-    coeffs, coeff_errs = lp.fit(deg=1)
+
+Fits and other overlays are the caller's business: compute them
+externally and pass them in as additional labeled traces, e.g.
+lp.update(xs, ys, label='fit', style='k-').
 """
 import numpy as np
 import matplotlib.pyplot as plt
-
-from .fitting import polyfit_weights
 
 
 def set_plot_interactive(fig, enabled=True):
@@ -87,8 +88,6 @@ class LivePlot:
         self._style = style
         self._capsize = capsize
         self._traces = {}      # label -> dict(artist, x, y, y_err, style)
-        self._fit_lines = {}   # label -> Line2D of the fit overlay
-        self.fit_result = None  # (coeffs, coeff_errs) of the last fit()
 
     def update(self, x, y, y_err=None, label=None, style=None):
         """Replace the plotted data for this trace and redraw."""
@@ -113,36 +112,6 @@ class LivePlot:
         self._traces[label] = dict(artist=artist, x=x, y=y, y_err=y_err,
                                    style=style)
         self.refresh()
-
-    def fit(self, deg=1, label=None):
-        """Weighted polynomial fit of the current data, drawn as an overlay.
-
-        Uses polyfit_weights (y_err from the last update() as absolute
-        errors).  Title shows the fit as [c0, c1, ...] ± [e0, e1, ...],
-        lowest power first (the numpy.polynomial convention: coeffs[0]
-        constant, coeffs[1] slope, ...).  Returns (coeffs, coeff_errs) in
-        that same order; also stored as self.fit_result.  May be called
-        repeatedly — the overlay and title are replaced, not stacked.
-        """
-        tr = self._traces[label]
-        coeffs, errs, _ = polyfit_weights(tr["x"], tr["y"], tr["y_err"], deg)
-
-        xs = np.linspace(np.min(tr["x"]), np.max(tr["x"]), 200)
-        ys = np.polynomial.polynomial.polyval(xs, coeffs)
-        line = self._fit_lines.get(label)
-        if line is None:
-            line, = self.ax.plot(xs, ys, "k-")
-            self._fit_lines[label] = line
-        else:
-            line.set_data(xs, ys)
-
-        cs = ", ".join(f"{c:.4g}" for c in coeffs)
-        es = ", ".join(f"{e:.2g}" for e in errs)
-        self.ax.set_title(f"[{cs}] ± [{es}]", fontsize=10)
-
-        self.fit_result = (coeffs, errs)
-        self.refresh()
-        return coeffs, errs
 
     def set_interactive(self, enabled=True):
         """Freeze/unfreeze mouse interaction — see set_plot_interactive."""
