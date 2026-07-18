@@ -92,11 +92,11 @@ class LivePlot:
         """Weighted polynomial fit of the current data, drawn as an overlay.
 
         Uses polyfit_weights (y_err from the last update() as absolute
-        errors).  Puts slope/curvature ± error in the axes title.  Returns
-        (coeffs, coeff_errs), lowest power first (the numpy.polynomial
-        convention: coeffs[0] constant, coeffs[1] slope, ...); also stored
-        as self.fit_result.  May be called repeatedly — the overlay and
-        title are replaced, not stacked.
+        errors).  Title shows the fit as [c0, c1, ...] ± [e0, e1, ...],
+        lowest power first (the numpy.polynomial convention: coeffs[0]
+        constant, coeffs[1] slope, ...).  Returns (coeffs, coeff_errs) in
+        that same order; also stored as self.fit_result.  May be called
+        repeatedly — the overlay and title are replaced, not stacked.
         """
         tr = self._traces[label]
         coeffs, errs, _ = polyfit_weights(tr["x"], tr["y"], tr["y_err"], deg)
@@ -110,14 +110,9 @@ class LivePlot:
         else:
             line.set_data(xs, ys)
 
-        parts = []
-        if len(coeffs) >= 3:
-            parts.append(f"curvature = {coeffs[2]:.4g} ± {errs[2]:.2g}")
-        if len(coeffs) >= 2:
-            parts.append(f"slope = {coeffs[1]:.4g} ± {errs[1]:.2g}")
-        else:
-            parts.append(f"mean = {coeffs[0]:.4g} ± {errs[0]:.2g}")
-        self.ax.set_title(",  ".join(parts), fontsize=10)
+        cs = ", ".join(f"{c:.4g}" for c in coeffs)
+        es = ", ".join(f"{e:.2g}" for e in errs)
+        self.ax.set_title(f"[{cs}] ± [{es}]", fontsize=10)
 
         self.fit_result = (coeffs, errs)
         self.refresh()

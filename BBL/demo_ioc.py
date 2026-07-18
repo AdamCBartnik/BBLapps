@@ -27,8 +27,8 @@ If the client can't find the PVs, set (before importing epics):
 import numpy as np
 from caproto.server import PVGroup, ioc_arg_parser, pvproperty, run
 
-RATE_HZ = 10.0
-NOISE = 0.02          # 1-sigma noise on both readbacks
+RATE_HZ = 5.0
+NOISE = 0.1          # 1-sigma noise on both readbacks
 
 LIN_SLOPE = 2.0
 LIN_OFFSET = 1.0

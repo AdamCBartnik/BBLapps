@@ -17,7 +17,6 @@ import importlib
 _lazy = {
     "get_colormap": ".get_colormap",
     "get_todays_directory": ".today",
-    "get_pv": ".pv_tools",
     "caget": ".pv_tools",
     "caput": ".pv_tools",
     "restore_pvs": ".pv_tools",

@@ -1,6 +1,5 @@
 """
-Python port of matlab_code/utilities/measure_trend/measure_trend.m,
-simplified: scan one command PV over a list of setpoints, measure the
+Scan one command PV over a list of setpoints, measure the
 average/std of monitor PVs at each point, live-plot as the scan runs,
 and fit a polynomial to each trend at the end.
 
@@ -8,45 +7,32 @@ Meant for JupyterLab with `%matplotlib widget` (ipympl) so the plots
 update live during the scan.
 """
 import time
-
+import matplotlib.pyplot as plt
 import numpy as np
 
 from .live_plot import LivePlot, display_canvas
-from .pv_tools import _sample, caput, restore_pvs
+from .pv_tools import caget, caput, restore_pvs
 from .fitting import polyfit_weights
-
 
 def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
                   pause=0.0, max_pause=5.0, poly_deg=1, plot=True,
-                  fresh=None, verbose=False):
-    """Scan cmd_pv over setpoints and measure the trend of monitor_pvs.
-
-    At each setpoint: write cmd_pv (confirmed, caput wait=True), wait
-    `cmd_pause` seconds to settle, then average n_avg reads of each
-    monitor PV.  Each read waits at least `pause` seconds and for a
-    fresh camonitor update that arrives AFTER the read started, up to
-    `max_pause` (bbl.caget semantics with fresh=True — the veto applies
-    even when n_avg=1).  That fresh-update wait vetoes
-    whatever value is already sitting in the monitor cache — the labca
-    veto_current_data / wait_until_new_data pattern — so the first read
-    after a command change can never be a stale frame, and the defaults
-    (cmd_pause=0, pause=0) simply pace the scan by new data arriving.
-    With pause == 0 (default) sampling is camonitor-paced with the
-    fresh-update veto: if a monitor PV stops updating for max_pause
-    seconds, that scan point comes back NaN (bail out rather than
-    average stale data); the plot shows a gap there and the final fit
-    skips it.  That assumes monitors that update continuously (beamview
-    stats).  A pause > 0 switches to time-paced sampling of the cached
-    values (no freshness demand) — right for monitor PVs that only post
-    on change, e.g. settled readbacks.  fresh=True/False overrides
-    either default explicitly.
+                  stale=True, verbose=False):
+    """Scan cmd_pv over setpoints and measure the trend of monitor_pvs. 
     cmd_pv is restored to its initial value at the end, including on
     Ctrl-C / kernel interrupt.
-
-    monitor_pvs may be a single name or a sequence.
-    poly_deg is the degree of the final weighted fit (None = no fit).
-    verbose=True prints per-setpoint progress.
-
+    
+    cmd_pv:       The parameter to vary during the scan
+    setpoints:    Values to scan
+    monitor_pvs:  Readbacks to plot / fit, can be single name or sequence
+    n_avg:        Number of averages per setting
+    cmd_pause:    After setting a command, wait this long before measuring
+    pause:        Delay between measurements. 0 = Default will use camonitoring
+    max_pause:    Max delay when relying on camonitoring
+    poly_deg:     Order of polynomial to fit to data (None = no fit)
+    plot:         True/False, whether to show plot
+    stale:        True/False, whether to assume current value is stale after setting a command
+    verbose:       True/False, prints per-setpoint progress.
+    
     Returns a dict with setpoints, avg / std arrays of shape
     (n_points, n_monitors), fits {monitor_pv: (coeffs, coeff_errs)},
     and the LivePlot objects.
@@ -60,22 +46,16 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
 
     live_plots = []
     if plot:
-        import matplotlib.pyplot as plt
-        # ioff + explicit display: show the widget NOW, mid-cell, instead
-        # of relying on the end-of-cell auto-display (which would keep the
-        # plot invisible for the whole scan)
         with plt.ioff():
-            fig, axes = plt.subplots(len(names), 1, sharex=True,
+            fig, axes = plt.subplots(1, len(names), sharex=True,
                                      squeeze=False,
-                                     figsize=(6.0, 3.0 * len(names)))
-        for name, ax in zip(names, axes[:, 0]):
+                                     figsize=(5.0 * len(names), 5.0))
+        for name, ax in zip(names, axes[0, :]):
             live_plots.append(LivePlot(ylabel=name, ax=ax))
-        axes[-1, 0].set_xlabel(cmd_pv)
+        for ax in axes[0, :]:
+            ax.set_xlabel(cmd_pv)
         fig.tight_layout()
         display_canvas(fig)
-
-    if fresh is None:
-        fresh = pause == 0     # same rule as caget: a pause means time-paced
 
     with restore_pvs(cmd_pv):
         for i, sp in enumerate(setpoints):
@@ -83,11 +63,13 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
                 print(f"[{i + 1}/{n_pts}] {cmd_pv} = {sp:g}")
             caput(cmd_pv, sp)
             time.sleep(cmd_pause)
-            avg[i], std[i] = _sample(names, n_avg=n_avg, pause=pause,
-                                     max_pause=max_pause, fresh=fresh)
+            res = caget(names, n_avg=n_avg, pause=pause, max_pause=max_pause, stale=stale)
+            if n_avg > 1:
+                avg[i], std[i] = res
+            else:
+                avg[i], std[i] = res, 0.0   # n_avg=1: caget returns values only
             for k, lp in enumerate(live_plots):
-                lp.update(setpoints[:i + 1], avg[:i + 1, k],
-                          y_err=std[:i + 1, k])
+                lp.update(setpoints[:i + 1], avg[:i + 1, k], y_err=std[:i + 1, k])
 
     fits = {}
     if poly_deg is not None:
@@ -95,8 +77,7 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
             if live_plots:
                 fits[name] = live_plots[k].fit(deg=poly_deg)
             else:
-                coeffs, errs, _ = polyfit_weights(setpoints, avg[:, k],
-                                                  std[:, k], poly_deg)
+                coeffs, errs, _ = polyfit_weights(setpoints, avg[:, k], std[:, k], poly_deg)
                 fits[name] = (coeffs, errs)
 
     return dict(cmd_pv=cmd_pv, setpoints=setpoints, monitor_pvs=names,
