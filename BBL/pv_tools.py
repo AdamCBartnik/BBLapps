@@ -39,8 +39,6 @@ def caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, stale=False,
     and either a new monitored value is needed or a single pause
 
     return_std=True always returns (avg, std), even when n_avg == 1
-    (std is zeros then) — for code that calls caget with a variable
-    n_avg and needs one fixed return shape.
     """
     single = isinstance(pv_names, str)
     names = [pv_names] if single else list(pv_names)
