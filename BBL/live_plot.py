@@ -17,6 +17,32 @@ import matplotlib.pyplot as plt
 from .fitting import polyfit_weights
 
 
+def set_plot_interactive(fig, enabled=True):
+    """Enable/disable ALL mouse interaction with an ipympl figure.
+
+    Interacting with a plot (zooming, clicking, even hovering) while a
+    scan has the kernel blocked queues the mouse events browser-side
+    traffic up in the kernel's message queue — they interfere with the
+    live frame updates and then replay as chaos when the cell ends.
+    Disabling puts pointer-events: none on the canvas widget, so the
+    browser sends nothing at all during the scan.  No-op outside
+    Jupyter (plain scripts, Agg).
+    """
+    canvas = fig.canvas
+    if not hasattr(canvas, "add_class"):
+        return  # not a Jupyter widget canvas
+    if enabled:
+        canvas.remove_class("bbl-noninteract")
+    else:
+        try:
+            from IPython.display import HTML, display
+            display(HTML(
+                "<style>.bbl-noninteract { pointer-events: none; }</style>"))
+        except Exception:
+            pass
+        canvas.add_class("bbl-noninteract")
+
+
 def display_canvas(fig):
     """Display an ipympl figure widget immediately (works mid-cell).
 
@@ -117,6 +143,10 @@ class LivePlot:
         self.fit_result = (coeffs, errs)
         self.refresh()
         return coeffs, errs
+
+    def set_interactive(self, enabled=True):
+        """Freeze/unfreeze mouse interaction — see set_plot_interactive."""
+        set_plot_interactive(self.fig, enabled)
 
     def refresh(self):
         """Redraw now, even from inside a blocking loop."""

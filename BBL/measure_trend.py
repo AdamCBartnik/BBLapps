@@ -10,7 +10,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .live_plot import LivePlot, display_canvas
+from .live_plot import LivePlot, display_canvas, set_plot_interactive
 from .pv_tools import caget, caput, restore_pvs
 from .fitting import polyfit_weights
 
@@ -56,18 +56,26 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
             ax.set_xlabel(cmd_pv)
         fig.tight_layout()
         display_canvas(fig)
+        # mouse events sent to a blocked kernel queue up and replay as
+        # chaos after the scan — freeze the plot until we're done
+        set_plot_interactive(fig, False)
 
-    with restore_pvs(cmd_pv):
-        for i, sp in enumerate(setpoints):
-            if verbose:
-                print(f"[{i + 1}/{n_pts}] {cmd_pv} = {sp:g}")
-            caput(cmd_pv, sp)
-            time.sleep(cmd_pause)
-            avg[i], std[i] = caget(names, n_avg=n_avg, pause=pause,
-                                   max_pause=max_pause, stale=stale,
-                                   return_std=True)
-            for k, lp in enumerate(live_plots):
-                lp.update(setpoints[:i + 1], avg[:i + 1, k], y_err=std[:i + 1, k])
+    try:
+        with restore_pvs(cmd_pv):
+            for i, sp in enumerate(setpoints):
+                if verbose:
+                    print(f"[{i + 1}/{n_pts}] {cmd_pv} = {sp:g}")
+                caput(cmd_pv, sp)
+                time.sleep(cmd_pause)
+                avg[i], std[i] = caget(names, n_avg=n_avg, pause=pause,
+                                       max_pause=max_pause, stale=stale,
+                                       return_std=True)
+                for k, lp in enumerate(live_plots):
+                    lp.update(setpoints[:i + 1], avg[:i + 1, k],
+                              y_err=std[:i + 1, k])
+    finally:
+        if plot:
+            set_plot_interactive(fig, True)
 
     fits = {}
     if poly_deg is not None:

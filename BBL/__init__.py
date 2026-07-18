@@ -21,6 +21,7 @@ _lazy = {
     "caput": ".pv_tools",
     "restore_pvs": ".pv_tools",
     "LivePlot": ".live_plot",
+    "set_plot_interactive": ".live_plot",
     "polyfit_weights": ".fitting",
     "measure_trend": ".measure_trend",
 }
