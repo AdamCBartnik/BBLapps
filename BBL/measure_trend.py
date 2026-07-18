@@ -80,11 +80,18 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
     fits = {}
     if poly_deg is not None:
         for k, name in enumerate(names):
+            coeffs, errs, _ = polyfit_weights(setpoints, avg[:, k],
+                                              std[:, k], poly_deg)
+            fits[name] = (coeffs, errs)
             if live_plots:
-                fits[name] = live_plots[k].fit(deg=poly_deg)
-            else:
-                coeffs, errs, _ = polyfit_weights(setpoints, avg[:, k], std[:, k], poly_deg)
-                fits[name] = (coeffs, errs)
+                lp = live_plots[k]
+                xs = np.linspace(setpoints.min(), setpoints.max(), 200)
+                lp.update(xs, np.polynomial.polynomial.polyval(xs, coeffs),
+                          label="fit", style="k-")
+                cs = ", ".join(f"{c:.4g}" for c in coeffs)
+                es = ", ".join(f"{e:.2g}" for e in errs)
+                lp.ax.set_title(f"[{cs}] ± [{es}]", fontsize=10)
+                lp.refresh()
 
     return dict(cmd_pv=cmd_pv, setpoints=setpoints, monitor_pvs=names,
                 avg=avg, std=std, fits=fits, live_plots=live_plots)
