@@ -18,7 +18,8 @@ _pv_cache = {}
 _update_counts = {}   # pvname -> number of monitor updates seen
 
 
-def caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, stale=False):
+def caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, stale=False,
+          return_std=False):
     """Read one or more PVs via the monitor cache (never raises).
 
     caget('PV') returns the current value immediately
@@ -36,6 +37,10 @@ def caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, stale=False):
 
     stale is used when the current value is assumed to be stale
     and either a new monitored value is needed or a single pause
+
+    return_std=True always returns (avg, std), even when n_avg == 1
+    (std is zeros then) — for code that calls caget with a variable
+    n_avg and needs one fixed return shape.
     """
     single = isinstance(pv_names, str)
     names = [pv_names] if single else list(pv_names)
@@ -57,7 +62,7 @@ def caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, stale=False):
             std = np.zeros(len(names))
 
 
-    if n_avg > 1:
+    if n_avg > 1 or return_std:
         if single:
             return float(avg[0]), float(std[0])
         return avg, std

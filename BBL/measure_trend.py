@@ -63,11 +63,9 @@ def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,
                 print(f"[{i + 1}/{n_pts}] {cmd_pv} = {sp:g}")
             caput(cmd_pv, sp)
             time.sleep(cmd_pause)
-            res = caget(names, n_avg=n_avg, pause=pause, max_pause=max_pause, stale=stale)
-            if n_avg > 1:
-                avg[i], std[i] = res
-            else:
-                avg[i], std[i] = res, 0.0   # n_avg=1: caget returns values only
+            avg[i], std[i] = caget(names, n_avg=n_avg, pause=pause,
+                                   max_pause=max_pause, stale=stale,
+                                   return_std=True)
             for k, lp in enumerate(live_plots):
                 lp.update(setpoints[:i + 1], avg[:i + 1, k], y_err=std[:i + 1, k])
 
