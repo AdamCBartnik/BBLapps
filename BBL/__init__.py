@@ -27,6 +27,9 @@ _lazy = {
     "warmup": ".live_plot",
     "polyfit_weights": ".fitting",
     "measure_trend": ".measure_trend",
+    "solenoid_scan": ".solenoid_scan",
+    "fit_solenoid_scan": ".solenoid_scan",
+    "load_onaxis_field": ".solenoid_scan",
 }
 
 __all__ = sorted(_lazy)
@@ -39,9 +42,24 @@ def __getattr__(name):
         # Cache the resolved object in the package namespace.  Not just an
         # optimization: importing a submodule binds it as a package attribute,
         # so where a function shares its module's name (measure_trend,
-        # get_colormap) the module would shadow the function on every access
-        # after the first ('module' object is not callable).  This overwrite
-        # puts the function back on top.
+        # get_colormap, solenoid_scan, center_laser_in_gun) the module would
+        # shadow the function on every access after the first ('module'
+        # object is not callable).  This overwrite puts the function back on
+        # top -- as long as this __getattr__ is what triggers the import.
+        #
+        # KNOWN LIMITATION: this only works if THIS __getattr__ is what
+        # first imports the submodule.  If a colliding submodule is instead
+        # imported directly as the FIRST touch of it in the process, e.g.
+        #   from BBL.solenoid_scan import load_onaxis_field   # first thing
+        # Python's import system binds BBL.solenoid_scan = <the submodule>
+        # as an unconditional final step of that statement -- nothing
+        # running inside the submodule or in this __getattr__ can run
+        # "after" that step to undo it, so bbl.solenoid_scan then stays a
+        # module, not the function, for the rest of the process.  (Once the
+        # submodule IS already imported -- e.g. after a prior bbl.X access
+        # -- a later `from BBL.X import ...` is safe: Python's fast path
+        # for an already-loaded module skips the re-bind.)  Simplest rule:
+        # `import BBL as bbl; bbl.solenoid_scan(...)` always works.
         globals()[name] = attr
         return attr
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

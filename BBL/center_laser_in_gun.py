@@ -44,19 +44,14 @@ import numpy as np
 
 from .pv_tools import caget, caput, restore_pvs
 from .live_plot import LivePlot, display_canvas, set_plot_interactive
+from .physics import momentum_from_voltage_kv
 
 _PV_KEYS = ("laser_h_cmd", "laser_h_rdbk", "laser_v_cmd", "laser_v_rdbk",
             "corr_h_cmd", "corr_h_rdbk", "corr_v_cmd", "corr_v_rdbk",
             "sol_cmd", "centroid_x", "centroid_y")
 
-_MC2_KV = 511.0   # electron rest mass, in kV units (voltages are kV)
-
 _PARAM_NAMES = ("ax", "ay", "bx", "by", "x_off", "y_off",
                 "xc", "yc", "theta")
-
-
-def _momentum(volt_kv):
-    return math.sqrt((volt_kv + _MC2_KV) ** 2 - _MC2_KV ** 2)
 
 
 def _aberration_model(beta, laser_xy):
@@ -185,7 +180,8 @@ def center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2,
     if pvs.get("gun_volt"):
         gun_kv = caget(pvs["gun_volt"])
         if np.isfinite(gun_kv):
-            scale = _momentum(gun_kv) / _momentum(calib_kv)
+            scale = (momentum_from_voltage_kv(gun_kv)
+                    / momentum_from_voltage_kv(calib_kv))
         else:
             print("[center] WARNING: gun voltage unreadable; "
                   "using calibration unscaled")
