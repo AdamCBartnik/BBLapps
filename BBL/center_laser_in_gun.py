@@ -27,9 +27,12 @@ Usage:
         corr_h_cmd='...',  corr_h_rdbk='...',
         corr_v_cmd='...',  corr_v_rdbk='...',
         sol_cmd='...',
-        centroid_x='...',  centroid_y='...',   # beamview published, mm
+        centroid_x='...',  centroid_y='...',   # beamview published,
+                                                # any consistent screen unit
         gun_volt='...',                        # kV readback (optional)
     )
+    # calib_h/v must be A per [same screen unit as centroid_x/_y] —
+    # e.g. A/micron if centroid_x/_y report microns
     data = bbl.center_laser_in_gun(pvs, calib_h=-0.05, calib_v=0.06)
     ...
     bbl.fit_gun_aberration(data)      # refit later without rescanning
@@ -78,6 +81,14 @@ def fit_gun_aberration(data, beta0=None, verbose=True):
     Returns a dict with params {name: value}, errs {name: error}, cov,
     and model_pos (fitted beam positions).  Errors are the standard
     residual-scaled least-squares estimates (like MATLAB nlinfit).
+
+    xc/yc/theta (the electrical center) come out in laser_pos's unit
+    (mm, the cathode/stage side) regardless of what unit beam_pos is
+    in — a uniform rescaling of beam_pos is absorbed by ax/ay/bx/by/
+    x_off/y_off and does not shift where the model's zero-aberration
+    point sits.  So xc/yc are correct mm even though, at this site,
+    beam_pos (and therefore ax/ay/bx/by/x_off/y_off) are in microns,
+    the unit centroid_x/_y and calib_h/v are set up to use.
     """
     from scipy.optimize import least_squares
 
@@ -113,7 +124,9 @@ def fit_gun_aberration(data, beta0=None, verbose=True):
               f"± {errs['yc']:.3f} mm")
         print(f"(rotation {math.degrees(params['theta']):+.2f} deg, "
               f"a = ({params['ax']:.3f}, {params['ay']:.3f}), "
-              f"b = ({params['bx']:.4f}, {params['by']:.4f}) mm^-2)")
+              f"b = ({params['bx']:.4f}, {params['by']:.4f})  "
+              "[a, b in centroid_x/_y's unit per mm and mm^3 "
+              "on the cathode]")
         print("-" * 60)
 
     return dict(params=params, errs=errs, cov=cov,
@@ -145,15 +158,20 @@ def center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2,
 
     pvs: dict of PV names — keys laser_h_cmd/_rdbk, laser_v_cmd/_rdbk,
          corr_h_cmd/_rdbk, corr_v_cmd/_rdbk, sol_cmd, centroid_x/_y
-         (beamview published, mm), and optionally gun_volt (kV readback,
-         used to momentum-scale the corrector calibration).
+         (beamview published; any consistent screen unit — mm, micron,
+         etc.), and optionally gun_volt (kV readback, used to
+         momentum-scale the corrector calibration).
     scan_range:  full scan span in both axes, mm on the cathode
     num_points:  grid size per axis (num_points^2 total)
     n_avg:       centroid frames averaged per reading (stale-vetoed)
-    calib_h/v:   corrector calibration, A per mm ON SCREEN, measured at
-                 calib_kv.  Signs matter — a wrong sign makes the
-                 recentering loop diverge (it aborts after
-                 max_recenter_iter).
+    calib_h/v:   corrector calibration, A per [screen unit] ON SCREEN
+                 (i.e. the same unit centroid_x/_y report — A/micron if
+                 those are microns), measured at calib_kv.  Signs
+                 matter — a wrong sign makes the recentering loop
+                 diverge (it aborts after max_recenter_iter).
+    laser_pos_accuracy:  laser stage move tolerance, mm
+    screen_pos_accuracy: recenter convergence tolerance, in the same
+                 screen unit as centroid_x/_y
     """
     missing = [k for k in _PV_KEYS if k not in pvs]
     if missing:
@@ -215,8 +233,8 @@ def center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2,
                            float(caget(pvs["corr_v_cmd"])) - ey * cal_v)
         raise RuntimeError(
             f"recentering did not converge in {max_recenter_iter} "
-            f"iterations (last error ({ex:+.3f}, {ey:+.3f}) mm) — beam "
-            "lost, or wrong calibration sign?")
+            f"iterations (last error ({ex:+.3f}, {ey:+.3f}), screen "
+            "units) — beam lost, or wrong calibration sign?")
 
     # ---- initial state ----------------------------------------------------
     h0 = float(caget(pvs["laser_h_rdbk"]))
@@ -228,7 +246,7 @@ def center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2,
               f"correctors: ({i_h0:+.3f}, {i_v0:+.3f}) A")
         if gun_kv is not None:
             print(f"Gun at {gun_kv:.0f} kV -> calibration x{scale:.3f}: "
-                  f"({cal_h:+.4f}, {cal_v:+.4f}) A/mm")
+                  f"({cal_h:+.4f}, {cal_v:+.4f}) A/[screen unit]")
 
     step = scan_range / (num_points - 1)
     rel = np.linspace(-scan_range / 2, scan_range / 2, num_points)
