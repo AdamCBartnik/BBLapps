@@ -135,7 +135,8 @@ def _wait_for(read_fn, tolerance, timeout, what):
 
 def center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2,
                         calib_h=-0.044, calib_v=0.056, calib_kv=350.0,
-                        position_accuracy=0.02, magnet_tolerance=0.005,
+                        laser_pos_accuracy=0.01, magnet_tolerance=0.005,
+                        screen_pos_accuracy=10, 
                         max_recenter_iter=20, move_timeout=60.0,
                         settle_timeout=10.0, sol_pause=3.0, max_pause=5.0,
                         plot=True, verbose=True):
@@ -153,7 +154,6 @@ def center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2,
                  calib_kv.  Signs matter — a wrong sign makes the
                  recentering loop diverge (it aborts after
                  max_recenter_iter).
-    position_accuracy: stage tolerance and recenter tolerance, mm
     """
     missing = [k for k in _PV_KEYS if k not in pvs]
     if missing:
@@ -187,11 +187,12 @@ def center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2,
     def move_laser(axis, target):
         cmd, rdbk = pvs[f"laser_{axis}_cmd"], pvs[f"laser_{axis}_rdbk"]
         caput(cmd, target)
-        ok = _wait_for(lambda: caget(rdbk) - target, position_accuracy,
+        ok = _wait_for(lambda: caget(rdbk) - target, laser_pos_accuracy,
                        move_timeout, f"laser {axis} -> {target:.3f} mm")
         if not ok:
             raise RuntimeError(f"laser stage {axis} did not reach "
                                f"{target:.3f} mm within {move_timeout:g} s")
+        time.sleep(0.2)
 
     def set_correctors(i_h, i_v):
         caput([pvs["corr_h_cmd"], pvs["corr_v_cmd"]], [i_h, i_v])
@@ -199,6 +200,7 @@ def center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2,
                   magnet_tolerance, settle_timeout, "corrector H")
         _wait_for(lambda: caget(pvs["corr_v_rdbk"]) - i_v,
                   magnet_tolerance, settle_timeout, "corrector V")
+        time.sleep(0.1)
 
     def recenter(target):
         """Steer the beam back to `target` on the screen; returns the
@@ -206,7 +208,7 @@ def center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2,
         for _ in range(max_recenter_iter):
             c = read_centroid()
             ex, ey = c[0] - target[0], c[1] - target[1]
-            if abs(ex) < position_accuracy and abs(ey) < position_accuracy:
+            if abs(ex) < screen_pos_accuracy and abs(ey) < screen_pos_accuracy:
                 return (float(caget(pvs["corr_h_cmd"])),
                         float(caget(pvs["corr_v_cmd"])))
             set_correctors(float(caget(pvs["corr_h_cmd"])) - ex * cal_h,

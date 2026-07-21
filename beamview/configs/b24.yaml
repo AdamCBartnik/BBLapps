@@ -1,0 +1,6 @@
+name: B24
+epics_prefix: "B24"
+
+cameras:
+  - id: "B24Screen1"
+
