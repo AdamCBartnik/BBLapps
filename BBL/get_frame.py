@@ -4,14 +4,16 @@ EPICS, OR load a beamview 'ssss' snapshot .h5 file -- same function,
 dispatched on whether the name passed in ends with '.h5'.
 plot_frame() -- matplotlib-plot the result of either.
 
-Both paths return the same dict shape:
+A live grab returns a SUPERSET of the beamview snapshot .h5 fields; a
+.h5 load returns exactly the .h5 fields.  Both contain everything
+plot_frame() needs, so they're interchangeable for plotting.
 
     image, xx, yy                                       -- the frame
-    title, camera_name, exposure_ms, gain,
-    colormap, cmap_reversed, display_min, display_max   -- as saved by
-                                                            SnapshotWindow
+    title, camera_name, exposure_ms, gain,               -- the beamview
+    colormap, cmap_reversed, display_min, display_max       .h5 fields
+                                                            (both paths)
     bits, width, height, roi, unique_id, timestamp       -- extras,
-                                                            live grabs only
+                                                            live grabs ONLY
 
 Usage:
     import BBL as bbl
@@ -77,11 +79,12 @@ def get_frame(name, units="physical", timeout=5.0):
         note if the camera isn't calibrated -- or 'pixels'.  Ignored
         for a .h5 load (xx/yy come from the file as saved).
 
-    Returns a dict: image, xx, yy, title, camera_name, exposure_ms,
-    gain, colormap, cmap_reversed, display_min, display_max (the
-    fields present in a beamview .h5 -- a live grab and a saved file
-    are interchangeable for plot_frame()), plus, for a live grab only:
-    bits, width, height, roi, unique_id, timestamp.
+    Returns a dict.  A live grab is a SUPERSET of a beamview snapshot
+    .h5: the .h5 fields (image, xx, yy, title, camera_name,
+    exposure_ms, gain, colormap, cmap_reversed, display_min,
+    display_max) PLUS live-only extras (bits, width, height, roi,
+    unique_id, timestamp).  A .h5 load returns just the .h5 fields.
+    Both contain everything plot_frame() needs.
 
     Raises RuntimeError if no frame is available (zero-size image) or
     the image read fails.
@@ -155,8 +158,10 @@ def get_frame(name, units="physical", timeout=5.0):
         title=f"{camera_name}    {ts}",
         camera_name=camera_name,
         exposure_ms=exposure_ms, gain=gain,
-        colormap="Gray", cmap_reversed=False,
-        display_min=0.0, display_max=float(2 ** bits - 1),
+        colormap="freeze", cmap_reversed=False,
+        # default range = [0, max pixel value], as if "set range" were
+        # clicked in beamview (not [0, 2**bits-1] full scale)
+        display_min=0.0, display_max=float(image.max()),
         bits=bits, width=w, height=h,
         roi=(rx, ry, w, h), unique_id=uid, timestamp=ts,
     )
@@ -182,8 +187,9 @@ def plot_frame(data, ax=None, log=False, show_colorbar=True, cmap=None,
         (and vmin/vmax not given) the color range is auto-scaled to the
         transformed data instead of using the (now inconsistent) stored
         range.
-    cmap: override the colormap name (else data['colormap'], via
-        BBL.get_colormap; falls back to matplotlib gray on any failure).
+    cmap: override the colormap name (else data['colormap'], or 'freeze'
+        if the dict has none), via BBL.get_colormap; falls back to
+        matplotlib gray on any failure.
     vmin/vmax: override the display range (else data['display_min'/'max']
         when log=False, auto-scaled when log=True).
 
@@ -212,7 +218,7 @@ def plot_frame(data, ax=None, log=False, show_colorbar=True, cmap=None,
     extent = (xx[0] - 0.5 * dx, xx[-1] + 0.5 * dx,
              yy[-1] - 0.5 * dy, yy[0] + 0.5 * dy)
 
-    cmap_name = cmap or data.get("colormap", "Gray")
+    cmap_name = cmap or data.get("colormap") or "freeze"
     try:
         from .get_colormap import get_colormap
         from matplotlib.colors import ListedColormap
