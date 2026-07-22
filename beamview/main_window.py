@@ -2037,6 +2037,7 @@ class MainWindow(QMainWindow):
             self._caput_nonan("rms_x", sx)
             self._caput_nonan("rms_y", sy)
             self._caput_nonan("total_intensity", total)
+            self._caput_nonan("peak_intensity", peak)
 
         # Long term buffer
         if self._longterm_chk.isChecked():

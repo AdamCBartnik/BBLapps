@@ -20,15 +20,19 @@ Usage:
         sol_cmd='...', sol_rdbk='...',      # solenoid current, A
         screen='B24:Screen1',               # beamview publish prefix --
                                              # centroid_x/_y and
-                                             # total_intensity are read as
+                                             # peak_intensity are read as
                                              # "<screen>:centroid_x" etc.
         laser_power_cmd='...',              # optional: auto-intensity servo
+        cam_bits='...',                     # required if laser_power_cmd is
+                                             # given -- the CAMERA's own
+                                             # cam1:BitsPerPixel_RBV (a
+                                             # different PV namespace than
+                                             # `screen`; full scale = 2**bits)
         gun_volt='...',                     # optional: kV readback, for Brho
     )
     data = bbl.solenoid_scan(pvs, np.linspace(-0.5, -5.0, 15),
                              fieldmap='solenoid_R128_sg.gdf',
-                             drift_length=1.234,
-                             intensity_full_scale=3.2e6)
+                             drift_length=1.234)
     ...
     bbl.fit_solenoid_scan(data, 'solenoid_R128_sg.gdf', 1.234)  # refit
 """
@@ -206,7 +210,7 @@ def solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10,
                   magnet_tolerance=0.02, settle_timeout=30.0,
                   post_settle_pause=1.0, max_pause=5.0,
                   intensity_min_frac=0.10, intensity_max_frac=0.20,
-                  intensity_full_scale=None, laser_power_limit=100.0,
+                  laser_power_limit=100.0,
                   laser_power_pause=1.0, max_power_iter=20,
                   degauss=True, degauss_current=6.0, current_scale=1.0,
                   plot=True, verbose=True):
@@ -218,10 +222,14 @@ def solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10,
     pvs: dict of PV names —
       sol_cmd/_rdbk:    solenoid current, A
       screen:           beamview publish prefix, e.g. "B24:Screen1" —
-                        centroid_x/_y and total_intensity are read as
+                        centroid_x/_y and peak_intensity are read as
                         "<screen>:centroid_x" etc.
       laser_power_cmd:  (optional) laser power setpoint; enables the
                         auto-intensity servo.  Omit to skip it.
+      cam_bits:         required if laser_power_cmd is given — the
+                        CAMERA's own cam1:BitsPerPixel_RBV (a different
+                        PV namespace than `screen`; full scale for the
+                        servo is 2**bits).
       gun_volt:         (optional) kV readback, used with the field map
                         to compute the beam's momentum / Brho.
 
@@ -230,10 +238,9 @@ def solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10,
     fieldmap, drift_length, current_scale: see fit_solenoid_scan.
     n_avg: centroid frames averaged per setpoint (camonitor-vetoed).
 
-    intensity_min_frac/max_frac: target range for total_intensity, as a
-        fraction of intensity_full_scale (a reference "well exposed"
-        total_intensity for this camera/ROI, measured once).  Required
-        if pvs['laser_power_cmd'] is given.
+    intensity_min_frac/max_frac: target range for peak_intensity, as a
+        fraction of the camera's full scale (2**bits, from
+        pvs['cam_bits']).  Only used if pvs['laser_power_cmd'] is given.
     degauss: pulse the solenoid to +/-degauss_current, then 0, before
         the scan (removes hysteresis).
     """
@@ -244,11 +251,20 @@ def solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10,
 
     screen = pvs["screen"].rstrip(":")
     cx_pv, cy_pv = f"{screen}:centroid_x", f"{screen}:centroid_y"
-    ti_pv = f"{screen}:total_intensity"
+    pk_pv = f"{screen}:peak_intensity"
     laser_pv = pvs.get("laser_power_cmd")
-    if laser_pv and intensity_full_scale is None:
-        raise ValueError("intensity_full_scale is required when "
-                         "pvs['laser_power_cmd'] is given")
+    intensity_full_scale = None
+    if laser_pv:
+        if not pvs.get("cam_bits"):
+            raise ValueError("pvs['cam_bits'] is required when "
+                             "pvs['laser_power_cmd'] is given")
+        n_bits = caget(pvs["cam_bits"])
+        if not np.isfinite(n_bits):
+            raise RuntimeError("pvs['cam_bits'] read returned NaN")
+        intensity_full_scale = 2.0 ** n_bits
+        if verbose:
+            print(f"Camera bit depth: {n_bits:g} -> full scale "
+                  f"{intensity_full_scale:g}")
 
     current_setpoints = np.asarray(current_setpoints, dtype=float)
     n_pts = len(current_setpoints)
@@ -269,17 +285,17 @@ def solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10,
                                "or beamview stopped publishing?")
         return avg, std
 
-    def read_intensity():
-        v = caget(ti_pv, stale=True, max_pause=max_pause)
+    def read_peak_intensity():
+        v = caget(pk_pv, stale=True, max_pause=max_pause)
         if not np.isfinite(v):
-            raise RuntimeError("total_intensity read returned NaN")
+            raise RuntimeError("peak_intensity read returned NaN")
         return v
 
     def adjust_laser_power():
         if laser_pv is None:
             return
         for _ in range(max_power_iter):
-            frac = read_intensity() / intensity_full_scale
+            frac = read_peak_intensity() / intensity_full_scale
             pw = float(caget(laser_pv))
             if frac > intensity_max_frac:
                 caput(laser_pv, pw * (2.0 / 3.0))
