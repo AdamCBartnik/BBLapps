@@ -148,8 +148,24 @@ def _get_pv(name):
     """Return a cached, auto-monitored epics.PV (created on first use)."""
     pv = _pv_cache.get(name)
     if pv is None:
+        before = _update_counts.get(name, 0)
         pv = epics.PV(name, auto_monitor=True, callback=_count_update)
         _pv_cache[name] = pv
+        # Consume the initial-subscription value here, at creation. CA
+        # delivers the PV's current value the instant we subscribe, firing
+        # _count_update once -- a "free" tick that is NOT a genuine new
+        # monitor. If it weren't folded into the baseline now, the first
+        # fresh-update wait in _sample could be satisfied by it, so a
+        # freshly-created PV would yield one connection-time value that
+        # looks fresh but isn't (the "second stale value" problem). Waiting
+        # for it once here means every later fresh-wait needs a real new
+        # tick. One-time cost per PV; PVs are cached and reused.
+        if pv.wait_for_connection(timeout=_CONNECT_TIMEOUT):
+            t0 = time.monotonic()
+            while _update_counts.get(name, 0) <= before:
+                if time.monotonic() - t0 > 1.0:
+                    break
+                time.sleep(0.005)
     return pv
 
 
@@ -168,35 +184,55 @@ def _connect(pvs, required=True):
 
 
 def _sample(names, n_avg, pause, max_pause):
-    """Sample the named PVs n_avg times; always returns (avg, std) arrays.
-    If pause = 0, relies on camonitor for timing, up to a max of max_pause
+    """Sample the named PVs n_avg times; returns an (n_avg, len(names)) array.
+
+    n_avg == 1: the current cached value is returned immediately, no wait
+        -- "what is it right now?".
+    n_avg > 1: the pre-existing cached value is IGNORED; every returned
+        sample waits for a genuinely fresh value first, so all n_avg rows
+        are real new measurements and the caller never has to discard
+        leading stale ones. With pause == 0 the wait is camonitor-paced
+        (a new monitor update, up to max_pause before bailing to NaN);
+        with pause > 0 it is time-paced (sleep pause before each read).
+        The initial-subscription value is consumed at PV creation
+        (_get_pv), so a "fresh update" is always a genuine new tick, never
+        the connection value.
     """
     pvs = [_get_pv(n) for n in names]
     connected = _connect(pvs, required=False)
-    
+
     samples = np.full((n_avg, len(names)), np.nan)
-    for i in range(n_avg):
+
+    def read_row(i):
         for k, (pv, c) in enumerate(zip(pvs, connected)):
             v = pv.value if c else None
             samples[i, k] = np.nan if v is None else float(v)
 
-        if (i < n_avg-1):
-            if (pause > 0):
-                time.sleep(pause)
-            else:
-                marks = {n: _update_counts.get(n, 0) for n in names}
-                t0 = time.monotonic()
-                while True:
-                    if all(not c or _update_counts.get(n, 0) > marks[n]
-                           for n, c in zip(names, connected)):
-                        break
-                    if time.monotonic() - t0 >= max_pause:
-                        stale_pvs = [n for n, c in zip(names, connected)
-                                     if c and _update_counts.get(n, 0) <= marks[n]]
-                        print(f"[caget] no fresh update within {max_pause:g} s "
-                              f"({', '.join(stale_pvs)}) — returning nan")
-                        # same shape as the normal return, all NaN
-                        return np.full((n_avg, len(names)), np.nan)
-                    time.sleep(0.01)
+    # single read: hand back the current value with no waiting
+    if n_avg == 1:
+        read_row(0)
+        return samples
+
+    # averaging: wait for a fresh value BEFORE every read, so the
+    # pre-existing cached value is never included
+    for i in range(n_avg):
+        if pause > 0:
+            time.sleep(pause)
+        else:
+            marks = {n: _update_counts.get(n, 0) for n in names}
+            t0 = time.monotonic()
+            while True:
+                if all(not c or _update_counts.get(n, 0) > marks[n]
+                       for n, c in zip(names, connected)):
+                    break
+                if time.monotonic() - t0 >= max_pause:
+                    stale_pvs = [n for n, c in zip(names, connected)
+                                 if c and _update_counts.get(n, 0) <= marks[n]]
+                    print(f"[caget] no fresh update within {max_pause:g} s "
+                          f"({', '.join(stale_pvs)}) — returning nan")
+                    # same shape as the normal return, all NaN
+                    return np.full((n_avg, len(names)), np.nan)
+                time.sleep(0.01)
+        read_row(i)
 
     return samples
