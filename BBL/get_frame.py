@@ -6,7 +6,7 @@ plot_frame() -- matplotlib-plot the result of either.
 
 Both paths return the same dict shape:
 
-    image, xx, yy                                      -- the frame
+    image, xx, yy                                       -- the frame
     title, camera_name, exposure_ms, gain,
     colormap, cmap_reversed, display_min, display_max   -- as saved by
                                                             SnapshotWindow
@@ -15,15 +15,13 @@ Both paths return the same dict shape:
 
 Usage:
     import BBL as bbl
-    frame = bbl.get_frame('B24Screen1')       # areaDetector prefix, NOT
-                                               # beamview's publish prefix
+    frame = bbl.get_frame('B24Screen1') 
     bbl.plot_frame(frame)
 
     frame2 = bbl.get_frame('ssss_001.h5')     # loads the file instead
     bbl.plot_frame(frame2, log=True)
 """
 import time
-
 import numpy as np
 
 from .pv_tools import caget
