@@ -1154,6 +1154,21 @@ class MainWindow(QMainWindow):
         ts = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
         title_str = f"{self.windowTitle()}    {ts}"
 
+        # Extras that make a saved .h5 a match for a BBL.get_frame() live
+        # grab (same field set). Best-effort — a backend may not offer them.
+        try:
+            bits = int(self.camera.bits)
+        except Exception:
+            bits = 16
+        try:
+            roi = tuple(int(v) for v in self.camera.get_roi())
+        except Exception:
+            roi = None
+        try:
+            unique_id = self.camera.unique_id
+        except Exception:
+            unique_id = None
+
         win = SnapshotWindow(
             raw_img      = img,
             xx           = self._last_analysis_xx,
@@ -1168,6 +1183,10 @@ class MainWindow(QMainWindow):
             camera_name  = self.windowTitle(),
             exposure_ms  = self._exposure_spin.value(),
             gain         = self._gain_spin.value(),
+            bits         = bits,
+            roi          = roi,
+            unique_id    = unique_id,
+            timestamp    = ts,
         )
         win.show()
         self._snapshot_windows.append(win)

@@ -104,6 +104,10 @@ class SnapshotWindow(QMainWindow):
         camera_name: str = "",
         exposure_ms: float = 0.0,
         gain: float = 1.0,
+        bits: int = 16,
+        roi: tuple = None,
+        unique_id=None,
+        timestamp: str = "",
     ):
         super().__init__()
         self.setWindowTitle(title_str)
@@ -121,6 +125,12 @@ class SnapshotWindow(QMainWindow):
         self._camera_name  = camera_name
         self._exposure_ms  = exposure_ms
         self._gain         = gain
+        # Extras mirroring BBL.get_frame()'s live-grab fields, so a saved
+        # .h5 loaded via BBL.get_frame() has the same shape as a live grab.
+        self._bits         = bits
+        self._roi          = roi
+        self._unique_id    = unique_id
+        self._timestamp    = timestamp
 
         self._build_ui(display_img, lut)
 
@@ -314,6 +324,18 @@ class SnapshotWindow(QMainWindow):
                 f.attrs["cmap_reversed"] = int(self._cmap_reversed)
                 f.attrs["display_min"]   = self._display_min
                 f.attrs["display_max"]   = self._display_max
+
+                # Extras matching BBL.get_frame()'s live-grab fields
+                h, w = self._raw_img.shape
+                f.attrs["width"]         = int(w)
+                f.attrs["height"]        = int(h)
+                f.attrs["bits"]          = int(self._bits)
+                f.attrs["timestamp"]     = self._timestamp
+                if self._roi is not None:
+                    f.attrs["roi"]       = np.asarray(self._roi, dtype=int)
+                # h5 attrs can't hold None -- write unique_id only if present
+                if self._unique_id is not None:
+                    f.attrs["unique_id"] = int(self._unique_id)
         except Exception as e:
             self._status_lbl.setText(f"HDF5 save failed: {e}")
             return

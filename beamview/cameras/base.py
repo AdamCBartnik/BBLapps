@@ -64,6 +64,12 @@ class CameraBase(ABC):
     def max_value(self) -> int:
         return 2 ** self.bits - 1
 
+    @property
+    def unique_id(self):
+        """Frame counter / UniqueId of the most recent frame, or None if the
+        backend doesn't expose one. Override for EPICS areaDetector cameras."""
+        return None
+
     @abstractmethod
     def snapshot(self) -> np.ndarray:
         """Capture and return a 2-D array of shape (height, width).

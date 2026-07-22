@@ -148,6 +148,11 @@ class EPICSAreaDetectorCamera(CameraBase):
                          as_string=True, timeout=2.0)
         return _DATATYPE_BITS.get(dt, 16)
 
+    @property
+    def unique_id(self):
+        v = self._get(":image1:UniqueId_RBV")
+        return int(v) if v is not None else None
+
     def _read_image(self, name: str) -> np.ndarray:
         """Read one image waveform (name = 'image1' or 'image2'), reshaped to
         (h, w). The native EPICS dtype is preserved — a real two-image

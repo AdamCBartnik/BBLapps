@@ -4,16 +4,18 @@ EPICS, OR load a beamview 'ssss' snapshot .h5 file -- same function,
 dispatched on whether the name passed in ends with '.h5'.
 plot_frame() -- matplotlib-plot the result of either.
 
-A live grab returns a SUPERSET of the beamview snapshot .h5 fields; a
-.h5 load returns exactly the .h5 fields.  Both contain everything
-plot_frame() needs, so they're interchangeable for plotting.
+A live grab and a beamview snapshot .h5 carry the SAME fields (beamview
+writes the extras too, as of the same change that added them here):
 
     image, xx, yy                                       -- the frame
-    title, camera_name, exposure_ms, gain,               -- the beamview
-    colormap, cmap_reversed, display_min, display_max       .h5 fields
-                                                            (both paths)
-    bits, width, height, roi, unique_id, timestamp       -- extras,
-                                                            live grabs ONLY
+    title, camera_name, exposure_ms, gain,
+    colormap, cmap_reversed, display_min, display_max
+    bits, width, height, roi, unique_id, timestamp       -- "extras"
+
+Caveat: .h5 files saved by an OLDER beamview won't have the extras
+(and a camera with no UniqueId omits unique_id even live).  plot_frame()
+only needs image/xx/yy/colormap/display range, which every path always
+has, so it works regardless.
 
 Usage:
     import BBL as bbl
@@ -79,12 +81,11 @@ def get_frame(name, units="physical", timeout=5.0):
         note if the camera isn't calibrated -- or 'pixels'.  Ignored
         for a .h5 load (xx/yy come from the file as saved).
 
-    Returns a dict.  A live grab is a SUPERSET of a beamview snapshot
-    .h5: the .h5 fields (image, xx, yy, title, camera_name,
-    exposure_ms, gain, colormap, cmap_reversed, display_min,
-    display_max) PLUS live-only extras (bits, width, height, roi,
-    unique_id, timestamp).  A .h5 load returns just the .h5 fields.
-    Both contain everything plot_frame() needs.
+    Returns a dict: image, xx, yy, title, camera_name, exposure_ms,
+    gain, colormap, cmap_reversed, display_min, display_max, bits,
+    width, height, roi, unique_id, timestamp.  A beamview snapshot .h5
+    carries the same fields (older files may lack the last six; see the
+    module docstring).
 
     Raises RuntimeError if no frame is available (zero-size image) or
     the image read fails.
