@@ -1,29 +1,25 @@
 """
 get_frame() — grab the current frame + metadata from a camera IOC over
 EPICS.  plot_frame() — matplotlib-plot the result, or an .h5 file saved
-by beamview's "Make New Figure" -> Save ("ssss") feature.
+by beamview's "Make New Figure" -> Save feature.
 
 Both return/accept the same dict shape, so a live get_frame() and a
 saved .h5 (via load_h5_frame) are interchangeable:
 
-    image, xx, yy                                      -- the frame
+    image, xx, yy                                       -- the frame
     title, camera_name, exposure_ms, gain,
-    colormap, cmap_reversed, display_min, display_max   -- as saved by
-                                                            SnapshotWindow
-    bits, width, height, roi, unique_id, timestamp       -- extras,
-                                                            get_frame() only
+    colormap, cmap_reversed, display_min, display_max   -- camera and/or beamview settings
+    bits, width, height, roi, unique_id, timestamp      -- extras, get_frame() only
 
 Usage:
     import BBL as bbl
-    frame = bbl.get_frame('B24Screen1')       # areaDetector prefix, NOT
-                                               # beamview's publish prefix
+    frame = bbl.get_frame('B24Screen1') 
     bbl.plot_frame(frame)
 
     frame2 = bbl.load_h5_frame('ssss_001.h5')
     bbl.plot_frame(frame2, log=True)
 """
 import time
-
 import numpy as np
 
 # Bits carried by each areaDetector DataType, used when the IOC doesn't
