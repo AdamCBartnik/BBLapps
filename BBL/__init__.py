@@ -13,6 +13,14 @@ Submodules are imported lazily on first attribute access, so e.g.
 beamview can use BBL.today on a machine without matplotlib or pyepics.
 """
 import importlib
+import os
+
+# Must happen before pyepics/epics ever connects a channel in this process
+# (libca reads it at init) -- default is far too small for a multi-megapixel
+# image waveform (e.g. image1:ArrayData). Since BBL's submodules are all
+# lazily imported, THIS is the one place guaranteed to run before any of
+# them touch epics, regardless of which BBL name gets accessed first.
+os.environ.setdefault("EPICS_CA_MAX_ARRAY_BYTES", "40000000")
 
 _lazy = {
     "get_colormap": ".get_colormap",
@@ -31,7 +39,6 @@ _lazy = {
     "fit_solenoid_scan": ".solenoid_scan",
     "load_onaxis_field": ".solenoid_scan",
     "get_frame": ".get_frame",
-    "load_h5_frame": ".get_frame",
     "plot_frame": ".get_frame",
 }
 
