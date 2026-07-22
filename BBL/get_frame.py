@@ -193,6 +193,7 @@ def plot_frame(data, ax=None, log=False, show_colorbar=True, cmap=None,
         matplotlib gray on any failure.
     vmin/vmax: override the display range (else data['display_min'/'max']
         when log=False, auto-scaled when log=True).
+    title: if given, drawn as the axes title; by default there is no title.
 
     Returns the Axes plotted into.
     """
@@ -235,13 +236,13 @@ def plot_frame(data, ax=None, log=False, show_colorbar=True, cmap=None,
     # widget's first (and only) frame is already complete.
     with plt.ioff():
         if created:
-            _, ax = plt.subplots()
+            _, ax = plt.subplots(figsize=(8, 6))
         fig = ax.figure
 
         im = ax.imshow(img, extent=extent, origin="upper", cmap=mpl_cmap,
                        vmin=vmin, vmax=vmax, aspect="equal")
-        ax.set_title(title if title is not None else data.get("title", ""),
-                    fontsize=10)
+        if title is not None:      # no title by default; only if asked
+            ax.set_title(title, fontsize=10)
         if show_colorbar:
             fig.colorbar(im, ax=ax)
         fig.canvas.draw()   # settle layout + render into the Agg buffer
