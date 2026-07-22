@@ -30,6 +30,9 @@ _lazy = {
     "solenoid_scan": ".solenoid_scan",
     "fit_solenoid_scan": ".solenoid_scan",
     "load_onaxis_field": ".solenoid_scan",
+    "get_frame": ".get_frame",
+    "load_h5_frame": ".get_frame",
+    "plot_frame": ".get_frame",
 }
 
 __all__ = sorted(_lazy)
