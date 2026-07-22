@@ -204,16 +204,6 @@ def plot_frame(data, ax=None, log=False, show_colorbar=True, cmap=None,
     if log:
         img = np.log10(1.0 + np.abs(img))
 
-    if ax is None:
-        # ioff + explicit display: show the widget NOW rather than relying
-        # on being the cell's last expression / end-of-cell auto-display,
-        # which under ipympl can leave the plot never appearing (same fix
-        # as LivePlot -- see live_plot.py's display_canvas).
-        with plt.ioff():
-            _, ax = plt.subplots()
-        display_canvas(ax.figure)
-    fig = ax.figure
-
     dx = xx[1] - xx[0] if len(xx) > 1 else 1.0
     dy = abs(yy[0] - yy[1]) if len(yy) > 1 else 1.0
     extent = (xx[0] - 0.5 * dx, xx[-1] + 0.5 * dx,
@@ -235,11 +225,37 @@ def plot_frame(data, ax=None, log=False, show_colorbar=True, cmap=None,
     if vmax is None:
         vmax = float(img.max()) if log else data.get("display_max", float(img.max()))
 
-    im = ax.imshow(img, extent=extent, origin="upper", cmap=mpl_cmap,
-                   vmin=vmin, vmax=vmax, aspect="equal")
-    ax.set_title(title if title is not None else data.get("title", ""),
-                fontsize=10)
-    if show_colorbar:
-        fig.colorbar(im, ax=ax)
-    fig.canvas.draw()
+    created = ax is None
+    # Build and FULLY render the figure with interactive mode off, before it
+    # is ever shown to the frontend.  Populating an ipympl figure AFTER it is
+    # displayed races the widget's initial image request -- the frontend can
+    # latch onto a half-populated frame (colorbar/title being the last things
+    # added), which showed up as an intermittently clipped colorbar and
+    # missing title pixels.  Rendering first, displaying second, means the
+    # widget's first (and only) frame is already complete.
+    with plt.ioff():
+        if created:
+            _, ax = plt.subplots()
+        fig = ax.figure
+
+        im = ax.imshow(img, extent=extent, origin="upper", cmap=mpl_cmap,
+                       vmin=vmin, vmax=vmax, aspect="equal")
+        ax.set_title(title if title is not None else data.get("title", ""),
+                    fontsize=10)
+        if show_colorbar:
+            fig.colorbar(im, ax=ax)
+        fig.canvas.draw()   # settle layout + render into the Agg buffer
+
+    if created:
+        display_canvas(fig)   # display the already-complete figure
+    else:
+        # existing, already-displayed figure: force one full (non-diff)
+        # frame so the added artists can't come through as a partial update
+        if hasattr(fig.canvas, "_force_full"):
+            fig.canvas._force_full = True
+        fig.canvas.draw_idle()
+        try:
+            fig.canvas.flush_events()
+        except Exception:
+            pass
     return ax
