@@ -138,7 +138,7 @@ def _transfer_matrix(z, bz_per_amp, current, brho, edge_drift):
     return _drift_matrix(edge_drift) @ m
 
 
-def fit_solenoid_scan(data, fieldmap, drift_length, current_scale=1.0,
+def fit_solenoid_scan(data, fieldmap, drift_length, current_scale=-1.0,
                       brho=None, verbose=True):
     """Fit a solenoid_scan() result for the beam's (x, x', y, y') at the
     solenoid entrance.  data needs 'current_setpoints', 'x_avg', 'y_avg'
@@ -191,6 +191,13 @@ def fit_solenoid_scan(data, fieldmap, drift_length, current_scale=1.0,
               f"{drift_length:.4f} m -> edge-to-screen drift "
               f"{edge_drift:.4f} m")
 
+    # current_scale multiplies the setpoints before building the model:
+    # its SIGN sets the solenoid's assumed field/rotation direction. The
+    # default is -1.0 because this machine's solenoid polarity is swapped
+    # relative to the field map's sign convention (empirically the fit is
+    # far better at -1 than +1). Flip to +1.0 for a solenoid whose current
+    # sign matches the map; |value| != 1 also absorbs a current-calibration
+    # factor (the MATLAB original's /1.022).
     cur = np.asarray(data["current_setpoints"], dtype=float) * current_scale
     x = np.asarray(data["x_avg"], dtype=float)
     y = np.asarray(data["y_avg"], dtype=float)
@@ -256,7 +263,7 @@ def solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10,
                   intensity_min_frac=0.10, intensity_max_frac=0.20,
                   laser_power_limit=100.0,
                   laser_power_pause=1.0, max_power_iter=20,
-                  degauss=True, degauss_current=6.0, current_scale=1.0,
+                  degauss=True, degauss_current=6.0, current_scale=-1.0,
                   plot=True, verbose=True):
     """Scan a solenoid, measure the beam centroid trajectory, and fit it
     (fit_solenoid_scan) for the beam's position/angle at the solenoid
