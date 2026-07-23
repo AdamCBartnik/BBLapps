@@ -18,16 +18,19 @@ must be normalized to 1 A of solenoid excitation, uniform in z.
 Usage:
     pvs = dict(
         sol_cmd='...', sol_rdbk='...',      # solenoid current, A
-        screen='B24:Screen1',               # beamview publish prefix --
+        screen='B24',                       # beamview publish prefix (the
+                                             # area-level EPICS prefix) --
                                              # centroid_x/_y and
                                              # peak_intensity are read as
                                              # "<screen>:centroid_x" etc.
         laser_power_cmd='...',              # optional: auto-intensity servo
-        cam_bits='...',                     # required if laser_power_cmd is
+        camera='B24Screen1',                # required if laser_power_cmd is
                                              # given -- the CAMERA's own
-                                             # cam1:BitsPerPixel_RBV (a
-                                             # different PV namespace than
-                                             # `screen`; full scale = 2**bits)
+                                             # areaDetector prefix (its config
+                                             # id). Full scale = 2**bits from
+                                             # "<camera>:cam1:BitsPerPixel_RBV"
+                                             # (standard name; separate
+                                             # namespace from `screen`)
         gun_volt='...',                     # optional: kV readback, for Brho
     )
     data = bbl.solenoid_scan(pvs, np.linspace(-0.5, -5.0, 15),
@@ -221,15 +224,18 @@ def solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10,
 
     pvs: dict of PV names —
       sol_cmd/_rdbk:    solenoid current, A
-      screen:           beamview publish prefix, e.g. "B24:Screen1" —
-                        centroid_x/_y and peak_intensity are read as
-                        "<screen>:centroid_x" etc.
+      screen:           beamview publish prefix (the area-level EPICS
+                        prefix, e.g. "B24") — centroid_x/_y and
+                        peak_intensity are read as "<screen>:centroid_x".
       laser_power_cmd:  (optional) laser power setpoint; enables the
                         auto-intensity servo.  Omit to skip it.
-      cam_bits:         required if laser_power_cmd is given — the
-                        CAMERA's own cam1:BitsPerPixel_RBV (a different
-                        PV namespace than `screen`; full scale for the
-                        servo is 2**bits).
+      camera:           required if laser_power_cmd is given — the
+                        camera's own areaDetector prefix (its beamview
+                        config id, e.g. "B24Screen1").  The bit depth is
+                        read from the standard "<camera>:cam1:
+                        BitsPerPixel_RBV"; full scale for the servo is
+                        2**bits.  (Separate namespace from `screen`, so it
+                        can't be derived from it.)
       gun_volt:         (optional) kV readback, used with the field map
                         to compute the beam's momentum / Brho.
 
@@ -240,7 +246,7 @@ def solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10,
 
     intensity_min_frac/max_frac: target range for peak_intensity, as a
         fraction of the camera's full scale (2**bits, from
-        pvs['cam_bits']).  Only used if pvs['laser_power_cmd'] is given.
+        pvs['camera']).  Only used if pvs['laser_power_cmd'] is given.
     degauss: pulse the solenoid to +/-degauss_current, then 0, before
         the scan (removes hysteresis).
     """
@@ -255,12 +261,14 @@ def solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10,
     laser_pv = pvs.get("laser_power_cmd")
     intensity_full_scale = None
     if laser_pv:
-        if not pvs.get("cam_bits"):
-            raise ValueError("pvs['cam_bits'] is required when "
+        if not pvs.get("camera"):
+            raise ValueError("pvs['camera'] (the camera's areaDetector "
+                             "prefix) is required when "
                              "pvs['laser_power_cmd'] is given")
-        n_bits = caget(pvs["cam_bits"])
+        bits_pv = f"{pvs['camera'].rstrip(':')}:cam1:BitsPerPixel_RBV"
+        n_bits = caget(bits_pv)
         if not np.isfinite(n_bits):
-            raise RuntimeError("pvs['cam_bits'] read returned NaN")
+            raise RuntimeError(f"{bits_pv} read returned NaN")
         intensity_full_scale = 2.0 ** n_bits
         if verbose:
             print(f"Camera bit depth: {n_bits:g} -> full scale "
