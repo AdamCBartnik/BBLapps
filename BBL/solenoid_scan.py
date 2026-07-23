@@ -255,9 +255,14 @@ def solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10,
     if missing:
         raise ValueError(f"pvs dict missing keys: {', '.join(missing)}")
 
+    # screen may be given with or without a trailing colon ("B24" or
+    # "B24:"), or empty for a prefix-less beamview publish -- mirror
+    # beamview's own _epics_pv: "<prefix>:<name>" if prefix else "<name>".
     screen = pvs["screen"].rstrip(":")
-    cx_pv, cy_pv = f"{screen}:centroid_x", f"{screen}:centroid_y"
-    pk_pv = f"{screen}:peak_intensity"
+    def _screen_pv(name):
+        return f"{screen}:{name}" if screen else name
+    cx_pv, cy_pv = _screen_pv("centroid_x"), _screen_pv("centroid_y")
+    pk_pv = _screen_pv("peak_intensity")
     laser_pv = pvs.get("laser_power_cmd")
     intensity_full_scale = None
     if laser_pv:
