@@ -141,15 +141,23 @@ def fit_solenoid_scan(data, fieldmap, drift_length, current_scale=1.0,
     by params, so this works in any consistent screen unit — nothing
     here assumes mm.)
 
+    drift_length (METERS) is the drift from the DOWNSTREAM EDGE of the
+    field map (its last z point, z[-1]) to the screen -- NOT the solenoid
+    center.  The transport integrates the field from z[0] to z[-1], then
+    drifts; so for a field map spanning z in [-a, +a] about the solenoid
+    center, drift_length = (center-to-screen distance) - a.  (Matches the
+    MATLAB original's dd = distance - solpos - sollen/2.)  Correspondingly
+    the reported x_off/y_off is the beam position at the field map's
+    UPSTREAM edge z[0], i.e. `a` upstream of the solenoid center.
+
     IMPORTANT — drift_length must be accurate: the fitted parameters
     depend strongly on it (a post-solenoid drift trades off against the
     beam angle: screen position = solenoid-exit position + L*divergence,
     so a shorter L with a larger angle traces almost the same spiral as
     a longer L with a smaller angle).  The fit QUALITY barely changes
     with L — a wrong drift_length still gives a good-looking fit — so the
-    residual will NOT warn you.  drift_length is a surveyed geometric
-    quantity (field-map center to screen, meters); supply the real value,
-    don't tune it to the fit.
+    residual will NOT warn you.  It is a surveyed geometric quantity;
+    supply the real value, don't tune it to the fit.
     """
     z, bz = load_onaxis_field(fieldmap)
 
