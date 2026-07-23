@@ -140,6 +140,16 @@ def fit_solenoid_scan(data, fieldmap, drift_length, current_scale=1.0,
     are microns.  (A uniform rescaling of x_avg/y_avg is fully absorbed
     by params, so this works in any consistent screen unit — nothing
     here assumes mm.)
+
+    IMPORTANT — drift_length must be accurate: the fitted parameters
+    depend strongly on it (a post-solenoid drift trades off against the
+    beam angle: screen position = solenoid-exit position + L*divergence,
+    so a shorter L with a larger angle traces almost the same spiral as
+    a longer L with a smaller angle).  The fit QUALITY barely changes
+    with L — a wrong drift_length still gives a good-looking fit — so the
+    residual will NOT warn you.  drift_length is a surveyed geometric
+    quantity (field-map center to screen, meters); supply the real value,
+    don't tune it to the fit.
     """
     z, bz = load_onaxis_field(fieldmap)
 
