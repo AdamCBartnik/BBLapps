@@ -35,7 +35,7 @@ Usage:
     )
     data = bbl.solenoid_scan(pvs, np.linspace(-0.5, -5.0, 15),
                              fieldmap='solenoid_R128_sg.gdf',
-                             drift_length=1.234)
+                             drift_length=1.234)   # solenoid CENTER to screen, m
     ...
     bbl.fit_solenoid_scan(data, 'solenoid_R128_sg.gdf', 1.234)  # refit
 """
@@ -116,13 +116,26 @@ def _solenoid_matrix(b, length, brho):
     ])
 
 
-def _transfer_matrix(z, bz_per_amp, current, brho, drift_length):
-    """4x4 transport matrix, field-map start to the screen, at `current`."""
+def _field_center(z, bz):
+    """Longitudinal center of the solenoid = the Bz^2-weighted centroid of
+    the on-axis field (the field-energy center; exact 0 for a symmetric
+    map, robust to tails, and NOT just the mid-z point).  This is the
+    point the user's center-to-screen distance is measured to."""
+    z = np.asarray(z, dtype=float)
+    w = np.asarray(bz, dtype=float) ** 2
+    return float(np.sum(z * w) / np.sum(w))
+
+
+def _transfer_matrix(z, bz_per_amp, current, brho, edge_drift):
+    """4x4 transport matrix, field-map start (z[0]) to the screen, at
+    `current`.  edge_drift is the drift from the map's downstream edge
+    (z[-1]) to the screen -- see fit_solenoid_scan for the center-to-edge
+    conversion."""
     dz = z[1] - z[0]
     m = np.eye(4)
     for i in range(len(z) - 1):
         m = _solenoid_matrix(bz_per_amp[i] * current, dz, brho) @ m
-    return _drift_matrix(drift_length) @ m
+    return _drift_matrix(edge_drift) @ m
 
 
 def fit_solenoid_scan(data, fieldmap, drift_length, current_scale=1.0,
@@ -141,14 +154,15 @@ def fit_solenoid_scan(data, fieldmap, drift_length, current_scale=1.0,
     by params, so this works in any consistent screen unit — nothing
     here assumes mm.)
 
-    drift_length (METERS) is the drift from the DOWNSTREAM EDGE of the
-    field map (its last z point, z[-1]) to the screen -- NOT the solenoid
-    center.  The transport integrates the field from z[0] to z[-1], then
-    drifts; so for a field map spanning z in [-a, +a] about the solenoid
-    center, drift_length = (center-to-screen distance) - a.  (Matches the
-    MATLAB original's dd = distance - solpos - sollen/2.)  Correspondingly
-    the reported x_off/y_off is the beam position at the field map's
-    UPSTREAM edge z[0], i.e. `a` upstream of the solenoid center.
+    drift_length (METERS) is the distance from the SOLENOID CENTER to the
+    screen -- the easy thing to survey.  The center is found as the
+    Bz^2-weighted centroid of the field map (_field_center, not just the
+    mid-z point), and the drift the transport actually needs (from the
+    map's downstream edge z[-1] to the screen) is computed internally as
+    drift_length - (z[-1] - center).  (Equivalent to the MATLAB original's
+    dd = distance - solpos - sollen/2, but with the true field center
+    instead of assuming symmetry.)  The reported x_off/y_off is the beam
+    position at the field map's UPSTREAM edge z[0].
 
     IMPORTANT — drift_length must be accurate: the fitted parameters
     depend strongly on it (a post-solenoid drift trades off against the
@@ -168,6 +182,15 @@ def fit_solenoid_scan(data, fieldmap, drift_length, current_scale=1.0,
                             "brho= directly)")
         brho = brho_tesla_meters(data["momentum_kv"])
 
+    # center-to-screen (surveyed) -> downstream-edge-to-screen (transport):
+    # subtract the distance from the field center to the map's exit edge
+    center = _field_center(z, bz)
+    edge_drift = drift_length - (z[-1] - center)
+    if verbose:
+        print(f"Field center at z = {center:+.4f} m; center-to-screen "
+              f"{drift_length:.4f} m -> edge-to-screen drift "
+              f"{edge_drift:.4f} m")
+
     cur = np.asarray(data["current_setpoints"], dtype=float) * current_scale
     x = np.asarray(data["x_avg"], dtype=float)
     y = np.asarray(data["y_avg"], dtype=float)
@@ -178,9 +201,9 @@ def fit_solenoid_scan(data, fieldmap, drift_length, current_scale=1.0,
     xy[1::2] = y - y[0]
 
     b = np.empty((2 * n, 4))
-    r0 = _transfer_matrix(z, bz, cur[0], brho, drift_length)
+    r0 = _transfer_matrix(z, bz, cur[0], brho, edge_drift)
     for i, c in enumerate(cur):
-        r = _transfer_matrix(z, bz, c, brho, drift_length)
+        r = _transfer_matrix(z, bz, c, brho, edge_drift)
         b[2 * i] = r[0, :] - r0[0, :]
         b[2 * i + 1] = r[2, :] - r0[2, :]
 
