@@ -40,6 +40,8 @@ _lazy = {
     "load_onaxis_field": ".solenoid_scan",
     "get_frame": ".get_frame",
     "plot_frame": ".get_frame",
+    "ssss": ".ssss",
+    "next_ssss_stem": ".ssss",
 }
 
 __all__ = sorted(_lazy)
@@ -47,15 +49,23 @@ __all__ = sorted(_lazy)
 
 def __getattr__(name):
     if name in _lazy:
-        module = importlib.import_module(_lazy[name], __name__)
-        attr = getattr(module, name)
-        # Cache the resolved object in the package namespace.  Not just an
+        modname = _lazy[name]
+        module = importlib.import_module(modname, __name__)
+        # Cache the resolved objects in the package namespace.  Not just an
         # optimization: importing a submodule binds it as a package attribute,
         # so where a function shares its module's name (measure_trend,
-        # get_colormap, solenoid_scan, center_laser_in_gun) the module would
-        # shadow the function on every access after the first ('module'
-        # object is not callable).  This overwrite puts the function back on
-        # top -- as long as this __getattr__ is what triggers the import.
+        # get_colormap, solenoid_scan, center_laser_in_gun, get_frame, ssss)
+        # the module would shadow the function on every access after the first
+        # ('module' object is not callable).  This overwrite puts the function
+        # back on top -- as long as this __getattr__ is what triggers the
+        # import.
+        #
+        # Cache EVERY lazy name belonging to this module, not just the one
+        # asked for.  Resolving only the requested name leaves a SIBLING
+        # shadowed: bbl.plot_frame() imports BBL.get_frame (binding the
+        # module over the function of the same name) and, if only
+        # 'plot_frame' were cached, a later bbl.get_frame() would find the
+        # module and raise.  Order-dependent, so it hid for a long time.
         #
         # KNOWN LIMITATION: this only works if THIS __getattr__ is what
         # first imports the submodule.  If a colliding submodule is instead
@@ -70,8 +80,10 @@ def __getattr__(name):
         # -- a later `from BBL.X import ...` is safe: Python's fast path
         # for an already-loaded module skips the re-bind.)  Simplest rule:
         # `import BBL as bbl; bbl.solenoid_scan(...)` always works.
-        globals()[name] = attr
-        return attr
+        for lazy_name, lazy_mod in _lazy.items():
+            if lazy_mod == modname and hasattr(module, lazy_name):
+                globals()[lazy_name] = getattr(module, lazy_name)
+        return globals()[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

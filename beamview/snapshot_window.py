@@ -30,41 +30,12 @@ from .coords import nearest_index
 
 # utilities lives one level above beamview/
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from BBL.today import get_todays_directory
-
-
-# ---------------------------------------------------------------------------
-# Helper: find next available ssss_NNN stem
-# ---------------------------------------------------------------------------
-
-def _next_ssss_stem(directory: Path, prefix: str = "ssss") -> Path:
-    """Return a Path stem (no extension) that doesn't clash with existing files.
-
-    Mirrors ssss.m: a custom prefix tries the bare name first, then appends _2, _3, ...
-    The default 'ssss' prefix is always numbered (ssss_001, ssss_002, ...).
-    """
-    _exts = (".png", ".h5")
-
-    def _free(stem: Path) -> bool:
-        return all(not stem.with_suffix(e).exists() for e in _exts)
-
-    if prefix != "ssss":
-        bare = directory / prefix
-        if _free(bare):
-            return bare
-        n = 2
-        while True:
-            stem = directory / f"{prefix}_{n}"
-            if _free(stem):
-                return stem
-            n += 1
-    else:
-        n = 1
-        while True:
-            stem = directory / f"ssss_{n:03d}"
-            if _free(stem):
-                return stem
-            n += 1
+# Import from the PACKAGE, not the submodules (`from BBL.ssss import ...`):
+# a direct submodule import binds BBL.ssss to the module, which permanently
+# shadows the ssss() function for the rest of the process -- so merely
+# importing beamview would break bbl.ssss() in the same session.  Going
+# through BBL's __getattr__ resolves and re-caches the functions instead.
+from BBL import get_todays_directory, next_ssss_stem
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +285,23 @@ class SnapshotWindow(QMainWindow):
             )
             return
 
-        stem = _next_ssss_stem(today_dir, prefix=prefix)
+        # reserve= atomically creates empty placeholders for both files, so a
+        # concurrent saver (another beamview, or BBL.ssss from a notebook)
+        # scanning at the same moment can't pick this same number and
+        # silently overwrite us.
+        exts = (".png", ".h5")
+        stem = next_ssss_stem(today_dir, prefix=prefix, reserve=exts)
+
+        def _drop_reservation():
+            """Release any placeholder still empty, so a failed save doesn't
+            permanently burn a number."""
+            for e in exts:
+                p = stem.with_suffix(e)
+                try:
+                    if p.exists() and p.stat().st_size == 0:
+                        p.unlink()
+                except OSError:
+                    pass
 
         # ── PNG: grab the plot area as rendered (image + axes + colorbar,
         #    not the surrounding GUI controls) ──────────────────────────
@@ -323,6 +310,7 @@ class SnapshotWindow(QMainWindow):
             png_path = stem.with_suffix(".png")
             pixmap.save(str(png_path))
         except Exception as e:
+            _drop_reservation()
             self._status_lbl.setText(f"PNG save failed: {e}")
             return
 
@@ -356,6 +344,7 @@ class SnapshotWindow(QMainWindow):
                 if self._unique_id is not None:
                     f.attrs["unique_id"] = int(self._unique_id)
         except Exception as e:
+            _drop_reservation()
             self._status_lbl.setText(f"HDF5 save failed: {e}")
             return
 
