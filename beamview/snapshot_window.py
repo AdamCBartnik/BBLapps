@@ -26,6 +26,8 @@ from PyQt5.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QSizePolicy,
 )
 
+from .coords import nearest_index
+
 # utilities lives one level above beamview/
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from BBL.today import get_todays_directory
@@ -271,10 +273,10 @@ class SnapshotWindow(QMainWindow):
             self._hover_label.hide()
             return
 
-        # Both xx and yy are descending; np.searchsorted needs ascending
-        # input, so negate both the array and the query for each.
-        col = int(np.clip(np.searchsorted(-xx, -dx), 0, img.shape[1] - 1))
-        row = int(np.clip(np.searchsorted(-yy, -dy), 0, img.shape[0] - 1))
+        # Nearest pixel indices (see coords.nearest_index -- searchsorted
+        # would find the boundary, biasing the sample by half a pixel).
+        col = nearest_index(xx, dx, img.shape[1])
+        row = nearest_index(yy, dy, img.shape[0])
         val = img[row, col]
 
         self._hover_label.setText(f"x={dx:.1f}  y={dy:.1f}  val={val}")

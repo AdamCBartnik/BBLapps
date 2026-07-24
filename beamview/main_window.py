@@ -14,6 +14,7 @@ from PyQt5.QtCore import QTimer, Qt, QThread, QObject, pyqtSignal, QRect, QSize,
 from PyQt5.QtGui import QFont
 
 from .cameras.base import CameraBase
+from .coords import nearest_index
 
 try:
     import epics as _epics
@@ -964,10 +965,10 @@ class MainWindow(QMainWindow):
             self._hover_label.hide()
             return
 
-        # Nearest pixel indices. Both xx and yy are descending, so flip
-        # the search for np.searchsorted (which requires ascending input).
-        col = int(np.clip(np.searchsorted(-xx, -dx), 0, img.shape[1] - 1))
-        row = int(np.clip(np.searchsorted(-yy, -dy), 0, img.shape[0] - 1))
+        # Nearest pixel indices (see coords.nearest_index -- searchsorted
+        # would find the boundary, biasing the sample by half a pixel).
+        col = nearest_index(xx, dx, img.shape[1])
+        row = nearest_index(yy, dy, img.shape[0])
         val = img[row, col]
 
         self._hover_label.setText(f"x={dx:.1f}  y={dy:.1f}  val={val}")
