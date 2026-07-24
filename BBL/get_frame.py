@@ -153,6 +153,15 @@ def get_frame(name, units="physical", timeout=5.0):
     else:
         raise ValueError("units must be 'physical' or 'pixels'")
 
+    # Mirror x to match beamview's convention: x increases LEFT (see
+    # beamview/main_window.py's _get_display_xy). Simple negation in
+    # NATURAL column order -- `image` here is the raw sensor array,
+    # un-reversed (unlike beamview's own display buffer, which additionally
+    # reverses columns purely for on-screen rendering); plot_frame()
+    # handles a descending xx correctly via matplotlib's own extent
+    # ordering, no array reversal needed there either.
+    xx = -xx
+
     ts = time.strftime("%Y-%m-%d  %H:%M:%S")
     return dict(
         image=image, xx=xx, yy=yy,

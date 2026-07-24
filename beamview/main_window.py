@@ -183,6 +183,12 @@ class MainWindow(QMainWindow):
         self._plot.setAspectLocked(True)
         self._plot.showAxis('top', False)
         self._plot.showAxis('right', False)
+        # x increases to the LEFT (see _get_display_xy's docstring) --
+        # paired with negating xx there and reversing the display buffer's
+        # columns in _process_and_display. All three together leave the
+        # image itself unchanged; this alone (or with only one of the
+        # other two) would mirror it.
+        self._plot.vb.invertX(True)
         self._plot.vb.sigRangeChanged.connect(self._on_view_range_changed)
         self._image_item = pg.ImageItem()
         self._plot.addItem(self._image_item)
@@ -948,17 +954,19 @@ class MainWindow(QMainWindow):
         yy = self._last_analysis_yy
         img = self._last_analysis_img
 
-        # Check whether cursor is actually inside the image extent
+        # Check whether cursor is actually inside the image extent.  xx is
+        # now descending too (x increases left, see _get_display_xy), so
+        # its bounds are [xx[-1], xx[0]], same pattern as yy.
         if xx is None or yy is None or img is None:
             self._hover_label.hide()
             return
-        if dx < xx[0] or dx > xx[-1] or dy < yy[-1] or dy > yy[0]:
+        if dx < xx[-1] or dx > xx[0] or dy < yy[-1] or dy > yy[0]:
             self._hover_label.hide()
             return
 
-        # Nearest pixel indices
-        col = int(np.clip(np.searchsorted(xx, dx), 0, img.shape[1] - 1))
-        # yy is descending (top of image = largest y), so flip search
+        # Nearest pixel indices. Both xx and yy are descending, so flip
+        # the search for np.searchsorted (which requires ascending input).
+        col = int(np.clip(np.searchsorted(-xx, -dx), 0, img.shape[1] - 1))
         row = int(np.clip(np.searchsorted(-yy, -dy), 0, img.shape[0] - 1))
         val = img[row, col]
 
@@ -989,18 +997,28 @@ class MainWindow(QMainWindow):
         wmax = self.camera.width_max
         hmax = self.camera.height_max
 
-        # View coords are display units: sensor pixels when "Units = pixels",
-        # otherwise physical units (see _get_display_xy: (px - 0.5*max)*scale).
-        # The ROI spinboxes need display-pixel coords — invert the scaling.
+        # View coords are display units: sensor pixels (negated, since x
+        # increases LEFT -- see _get_display_xy) when "Units = pixels",
+        # otherwise physical units. The ROI spinboxes use their OWN
+        # "display-pixel" convention -- wmax-1-sensor_index for x, same
+        # mirror _refresh_roi_boxes/_on_roi_apply use (kept independent
+        # of the plotted xx formula so spinbox values stay non-negative,
+        # in the existing [0, wmax-1] range, no widget changes needed).
+        # Derivation: pixels xx = -sensor  =>  wmax-1-sensor = xx+(wmax-1).
+        # physical xx = (0.5*wmax-sensor)*sx
+        #   => wmax-1-sensor = xx/sx + 0.5*wmax - 1.
         x1v, x2v = d1.x(), d2.x()
         y1v, y2v = d1.y(), d2.y()
-        if not self._units_pixels_chk.isChecked():
+        if self._units_pixels_chk.isChecked():
+            x1v = x1v + (wmax - 1)
+            x2v = x2v + (wmax - 1)
+        else:
             sx = self._scale_x_spin.value()
             sy = self._scale_y_spin.value()
             if sx <= 0 or sy <= 0:
                 return
-            x1v = x1v / sx + 0.5 * wmax
-            x2v = x2v / sx + 0.5 * wmax
+            x1v = x1v / sx + 0.5 * wmax - 1
+            x2v = x2v / sx + 0.5 * wmax - 1
             y1v = y1v / sy + 0.5 * hmax
             y2v = y2v / sy + 0.5 * hmax
 
@@ -1243,24 +1261,32 @@ class MainWindow(QMainWindow):
             wmax = self.camera.width_max
             hmax = self.camera.height_max
 
-            # X: display coords == sensor coords (no horizontal flip)
-            x0 = max(0, min(self._roi_x_min.value(), wmax - 1))
-            x1 = max(x0 + 1, min(self._roi_x_max.value(), wmax - 1))
+            # X: display is now horizontally flipped too (x increases
+            # left, matching _get_display_xy) -- the numerically SMALLER
+            # "min" spinbox is the RIGHT edge on screen, same pattern Y
+            # already uses (min spinbox = bottom = numerically smaller y).
+            dx0 = max(0, min(self._roi_x_min.value(), wmax - 1))
+            dx1 = max(dx0 + 1, min(self._roi_x_max.value(), wmax - 1))
 
             # Y: display is vertically flipped — plot y=0 is sensor row hmax-1
             dy0 = max(0, min(self._roi_y_min.value(), hmax - 1))
             dy1 = max(dy0 + 1, min(self._roi_y_max.value(), hmax - 1))
 
-            # Skip if nothing changed vs what the boxes already show (handles double-fire)
-            cur = (self._roi_x_min.value(), self._roi_x_max.value(),
-                   self._roi_y_min.value(), self._roi_y_max.value())
-            if (x0, x1, dy0, dy1) == cur and hasattr(self, '_last_roi_display') \
-                    and self._last_roi_display == (x0, x1, dy0, dy1):
-                return
-
+            sensor_x = wmax - 1 - dx1
+            sensor_w = dx1 - dx0 + 1
             sensor_y = hmax - 1 - dy1
             sensor_h = dy1 - dy0 + 1
-            self._apply_roi(x0, sensor_y, x1 - x0 + 1, sensor_h)
+
+            # Skip if nothing changed vs the last APPLIED sensor ROI
+            # (handles double-fire).  Compare in SENSOR space: _last_roi_
+            # display's x is sensor-consistent (see _refresh_roi_boxes),
+            # while the spinboxes read above are mirrored display values.
+            cur_sensor = (sensor_x, sensor_x + sensor_w - 1, dy0, dy1)
+            if (hasattr(self, '_last_roi_display')
+                    and self._last_roi_display == cur_sensor):
+                return
+
+            self._apply_roi(sensor_x, sensor_y, sensor_w, sensor_h)
         except Exception as e:
             print(f"[roi apply] {e}")
 
@@ -1289,15 +1315,20 @@ class MainWindow(QMainWindow):
         and reposition the image axes to match. Skips focused boxes."""
         try:
             rx, ry, rw, rh = self.camera.get_roi()
+            wmax = self.camera.width_max
             hmax = self.camera.height_max
+
+            # X: sensor → display (mirror: x increases left)
+            dx1 = wmax - 1 - rx
+            dx0 = wmax - rx - rw
 
             # Y: sensor → display (flip)
             dy1 = hmax - 1 - ry
             dy0 = hmax - ry - rh
 
             focused = self.focusWidget()
-            for sb, val in [(self._roi_x_min, rx),
-                            (self._roi_x_max, rx + rw - 1),
+            for sb, val in [(self._roi_x_min, dx0),
+                            (self._roi_x_max, dx1),
                             (self._roi_y_min, dy0),
                             (self._roi_y_max, dy1)]:
                 if sb is focused:
@@ -1306,7 +1337,13 @@ class MainWindow(QMainWindow):
                 sb.setValue(val)
                 sb.blockSignals(False)
 
-            # Cache the last applied display ROI for the double-fire guard
+            # Cache the last applied ROI for the double-fire guard AND for
+            # _get_display_xy's internal (pre-mirror) coordinate math.
+            # Deliberately asymmetric: x stays SENSOR-consistent (rx,
+            # rx+rw-1) -- _get_display_xy negates it internally, same as
+            # it always has -- while y is already DISPLAY-space (dy0,
+            # dy1), as it always was. _on_roi_apply mirrors spinbox
+            # (display) x back to sensor x before comparing/applying.
             self._last_roi_display = (rx, rx + rw - 1, dy0, dy1)
             self._update_image_rect(rx, dy0, rw, rh)
         except Exception as e:
@@ -1317,12 +1354,25 @@ class MainWindow(QMainWindow):
         Compute display coordinates for an image of shape (h, w) pixels.
 
         img row 0 = top of sensor crop = HIGHEST display-y value.
-        img col 0 = left edge of sensor crop.
+        img col 0 = left edge of sensor crop = HIGHEST display-x value:
+        x increases to the LEFT (matches the pre-2026 MATLAB beamview
+        convention, and beamview's left/right handedness relative to a
+        genuine right-handed accelerator frame). The on-screen IMAGE is
+        unchanged -- only the axis orientation and reported x values are
+        mirrored, via three paired pieces: this negation, reversing the
+        display buffer's column order just before setImage (see
+        _process_and_display), and ViewBox.invertX(True) set once on
+        self._plot (see _build_ui). All three are required together --
+        any one or two alone actually mirror the image. (Verified by
+        offscreen pixel-for-pixel rasterization, not by inspection.)
 
         Returns:
-            xx  : float64 (w,)  x coord of each column
+            xx  : float64 (w,)  x coord of each column (col 0 -> HIGHEST
+                  x; descending)
             yy  : float64 (h,)  y coord of each row (row 0 → highest y)
             rect: (x_left, y_bottom, rect_w, rect_h) for ImageItem.setRect
+                  -- describes where the column-REVERSED display buffer
+                  sits in the now x-inverted view
         """
         # Use the last confirmed (applied) ROI, not the live spinbox values.
         # This prevents half-typed numbers from shifting the image mid-edit.
@@ -1350,6 +1400,23 @@ class MainWindow(QMainWindow):
                     yy[-1] - 0.5 * sy,   # yy[-1] = smallest y (bottom row)
                     w * sx,
                     h * sy)
+
+        # Mirror x (see docstring).  Two DIFFERENT things need this, and
+        # they are NOT the same array:
+        #  - the RETURNED xx must stay in NATURAL column order (xx[i] is
+        #    still the coordinate of natural/sensor column i) since every
+        #    caller (software-ROI masking, centroid, hover) indexes into
+        #    the UN-reversed `img` array -- so this is a plain negation.
+        #  - the RECT, which positions the column-REVERSED display buffer
+        #    (see _process_and_display) in the (now x-inverted) view,
+        #    needs the coordinates in that REVERSED buffer's local column
+        #    order -- i.e. natural xx reversed, which (since natural xx is
+        #    now descending) comes out ascending, matching what the rect
+        #    formula above already assumes.
+        x_left_offset = rect[0] - xx[0]        # 0 (pixels) or -0.5*sx (physical)
+        xx = -xx                               # NATURAL order, descending
+        xx_for_rect = xx[::-1]                 # reversed-buffer's local order, ascending
+        rect = (xx_for_rect[0] + x_left_offset,) + rect[1:]
 
         return xx, yy, rect
 
@@ -1578,7 +1645,12 @@ class MainWindow(QMainWindow):
             self._update_colorbar_range()
 
         xx, yy, rect = self._get_display_xy(img.shape[0], img.shape[1])
-        self._image_item.setImage(display_img[::-1].T, autoLevels=False)
+        # Reverse rows (existing y-flip: row 0 = sensor top = highest
+        # display-y) AND columns (new x-flip: paired with the xx negation
+        # in _get_display_xy and ViewBox.invertX(True) on self._plot --
+        # together these leave the rendered image unchanged while making
+        # the axis/reported x increase to the left).
+        self._image_item.setImage(display_img[::-1, ::-1].T, autoLevels=False)
         self._image_item.setLevels((self._display_min, self._display_max))
         self._image_item.setRect(*rect)
 
@@ -1827,14 +1899,26 @@ class MainWindow(QMainWindow):
         return 1.0 if pixels else (sx if axis == "x" else sy)
 
     def _disp_to_sensor(self, val, axis, params):
-        """Display coordinate -> mode-invariant sensor coordinate."""
+        """Display coordinate -> mode-invariant sensor coordinate.
+
+        x display is mirrored (increases LEFT -- see _get_display_xy),
+        so the x branch negates relative to y's formula; y is unchanged.
+        """
         pixels, sx, sy = params
+        if axis == "x":
+            if pixels:
+                return -val
+            return 0.5 * self._axis_max(axis) - val / self._axis_scale(axis, params)
         if pixels:
             return val
         return val / self._axis_scale(axis, params) + 0.5 * self._axis_max(axis)
 
     def _sensor_to_disp(self, sval, axis, params):
         pixels, sx, sy = params
+        if axis == "x":
+            if pixels:
+                return -sval
+            return (0.5 * self._axis_max(axis) - sval) * self._axis_scale(axis, params)
         if pixels:
             return sval
         return (sval - 0.5 * self._axis_max(axis)) * self._axis_scale(axis, params)

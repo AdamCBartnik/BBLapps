@@ -154,6 +154,11 @@ class SnapshotWindow(QMainWindow):
         self._plot.showAxis("top", False)
         self._plot.showAxis("right", False)
         self._plot.setTitle(self._title_str, size="10pt")
+        # x increases to the LEFT (see main_window._get_display_xy) -- the
+        # received self._xx/raw_img are already in that (natural-order,
+        # descending-x) convention; paired with reversing the display
+        # buffer's columns below.
+        self._plot.vb.invertX(True)
 
         self._image_item = pg.ImageItem()
         self._plot.addItem(self._image_item)
@@ -203,7 +208,9 @@ class SnapshotWindow(QMainWindow):
 
         # ── Populate image ────────────────────────────────────────────
         self._image_item.setLookupTable(lut)
-        self._image_item.setImage(display_img[::-1].T, autoLevels=False)
+        # Reverse rows (y-flip) AND columns (x-flip, paired with the
+        # xx being natural-order/descending and ViewBox.invertX above).
+        self._image_item.setImage(display_img[::-1, ::-1].T, autoLevels=False)
         self._image_item.setLevels((self._display_min, self._display_max))
 
         h, w = display_img.shape
@@ -215,22 +222,28 @@ class SnapshotWindow(QMainWindow):
         self._cbar_item.setLookupTable(lut)
         self._cbar_plot.setYRange(lo, hi, padding=0)
 
-        # Fit image in view
+        # Fit image in view (xx is now descending: xx[-1] is the min)
         self._plot.setRange(
-            xRange=(self._xx[0], self._xx[-1]),
+            xRange=(self._xx[-1], self._xx[0]),
             yRange=(self._yy[-1], self._yy[0]),
             padding=0.02,
         )
 
     def _compute_rect(self, h: int, w: int):
+        # self._xx/_yy are in NATURAL column/row order (both descending --
+        # see main_window._get_display_xy), matching self._raw_img. The
+        # DISPLAY buffer is column+row reversed before setImage above, so
+        # the rect must be built from xx/yy REVERSED (ascending) to
+        # describe that reversed buffer's local coordinate order.
         xx, yy = self._xx, self._yy
         if len(xx) == w and len(yy) == h:
-            dx = xx[1] - xx[0] if w > 1 else 1.0
+            xx_r = xx[::-1]
+            dx = xx_r[1] - xx_r[0] if w > 1 else 1.0
             dy = abs(yy[0] - yy[1]) if h > 1 else 1.0
-            return (xx[0] - 0.5 * dx, yy[-1] - 0.5 * dy, w * dx, h * dy)
+            return (xx_r[0] - 0.5 * dx, yy[-1] - 0.5 * dy, w * dx, h * dy)
         # Fallback
-        return (float(xx[0]), float(yy[-1]),
-                float(xx[-1] - xx[0]), float(yy[0] - yy[-1]))
+        return (float(xx[-1]), float(yy[-1]),
+                float(xx[0] - xx[-1]), float(yy[0] - yy[-1]))
 
     # ------------------------------------------------------------------
     # Hover tooltip (mirrors main_window logic)
@@ -252,11 +265,15 @@ class SnapshotWindow(QMainWindow):
         dx, dy   = data_pt.x(), data_pt.y()
 
         xx, yy, img = self._xx, self._yy, self._raw_img
-        if dx < xx[0] or dx > xx[-1] or dy < yy[-1] or dy > yy[0]:
+        # xx is now descending too (x increases left), so its bounds are
+        # [xx[-1], xx[0]], same pattern as yy.
+        if dx < xx[-1] or dx > xx[0] or dy < yy[-1] or dy > yy[0]:
             self._hover_label.hide()
             return
 
-        col = int(np.clip(np.searchsorted(xx, dx),  0, img.shape[1] - 1))
+        # Both xx and yy are descending; np.searchsorted needs ascending
+        # input, so negate both the array and the query for each.
+        col = int(np.clip(np.searchsorted(-xx, -dx), 0, img.shape[1] - 1))
         row = int(np.clip(np.searchsorted(-yy, -dy), 0, img.shape[0] - 1))
         val = img[row, col]
 
