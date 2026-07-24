@@ -51,15 +51,22 @@ config (not probed). Reads use persistent auto-monitored PVs for speed.
 - Tests: `beamview/test_ad_backend.py`, `vpcam/ioc/test_relay_chain.py`
   (each spawns its own IOC).
 
-## Current state (2026-06-16)
+## Current state (2026-07-24)
 - Dual-frame two-image support, standalone `mock_ioc.py`, config-driven
   `dual`/`publish_to_epics`, and a cached-monitor read speedup: DONE, pushed.
 - **EMPAD rewrite: pushed, NOT yet validated on-site.** The camserver/trigger
   half (`python_ioc.py`) can only be tested on the EMPAD box. See the EMPAD
   memory for the open items (montage→image3 deferred; on-site test pending).
 - Deploying an IOC = copy its file(s) + `ad_ioc_base.py` to the target machine.
+- **Beamview's plotted x-axis increases to the LEFT** (matches the old
+  MATLAB convention; the rendered image itself is unchanged). This exists
+  so beamview's screen frame stays right-handed relative to the accelerator
+  physics convention the solenoid-scan fit assumes — see the beamview
+  memory for the mechanism and why. `BBL/get_frame.py`'s `xx` matches
+  (negated); `plot_frame()` needed no changes.
 
 ## Detailed assistant memory
 Richer context (decisions, history, hard-won gotchas) is in the machine-local
 auto-memory at `~/.claude/projects/<this-project>/memory/` — not in this repo.
-Key files: `project_beamview.md`, `project_empad_ioc_rewrite.md`, `user_profile.md`.
+Key files: `project_beamview.md`, `project_bbl_package.md`,
+`project_empad_ioc_rewrite.md`, `user_profile.md`.
