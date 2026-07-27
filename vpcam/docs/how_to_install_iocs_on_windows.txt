@@ -4,9 +4,10 @@ HOW TO INSTALL A CAMERA IOC ON A WINDOWS COMPUTER
 
 For running aravis_ioc.py (GigE Vision cameras) on Windows, plus beamview.
 
-Verified end to end on 2026-07-27 setting up the 211 lab camera:
-a Lucid Vision Labs PHX122S-M (4024x3036, Mono16) at 192.168.157.12,
-served as PPGUNCAM.
+Verified end to end on 2026-07-27 setting up the 211 lab camera: a Lucid
+Vision Labs PHX122S-M (4024x3036, Mono16) at 192.168.157.12, served as
+PPGUNCAM and displaying live in beamview.  Every step below was run on a
+real machine against real hardware.
 
 Why this is more involved than the Linux setup: aravis_ioc needs Aravis
 via GObject introspection ("import gi"), and there is NO conda package for
@@ -375,11 +376,15 @@ Firewall: Channel Access and the camera stream are DIFFERENT holes.
     python.exe.  ARV_DEBUG=all in the environment shows whether packets
     are arriving.
 
---swap-endian: only for FLIR / Point Grey.
+--swap-endian: leave it OFF unless you know you need it.
     Some cameras send >8-bit data big-endian while Aravis assumes little
     (aravis issue #921).  Symptom is noise-like images with wild banding.
-    Lucid cameras do NOT need it -- adding it to a working camera CREATES
-    that exact symptom.
+    Known to be needed:      FLIR / Point Grey Blackfly (e.g. BFLY-PGE-31S4M)
+    Confirmed NOT needed:    Lucid Vision Labs PHX122S-M (211, 2026-07-27)
+                             Lucid Vision Labs PHX016S   (B24)
+    Adding it to a camera that doesn't need it CREATES exactly the banded
+    noise it's meant to fix, so don't add it speculatively -- start
+    without it, look at the first images, and only then reach for it.
 
 "Failed to start executable - caRepeater" is harmless.
     Standard pyepics noise on Windows.  Ignore it; it is not related to
