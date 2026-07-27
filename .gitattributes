@@ -2,6 +2,15 @@
 *.sh      text eol=lf
 *.service text eol=lf
 
+# ...and the reverse: Windows batch files must land with CRLF regardless of
+# the checking-out machine's core.autocrlf.  cmd.exe tolerates LF for simple
+# scripts but goto/label handling gets flaky, and beamview/windows_batch/
+# Beamview.bat is built entirely out of goto.
+*.bat     text eol=crlf
+
+# Never let text normalisation touch a binary icon
+*.ico     binary
+
 # EMPAD extensionless shell wrappers (run on Linux as millenium) — keep LF
 EMPAD/join_beamview_ioc    text eol=lf
 EMPAD/join_python_ioc      text eol=lf
