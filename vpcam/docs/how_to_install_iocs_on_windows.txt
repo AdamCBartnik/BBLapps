@@ -276,6 +276,58 @@ Add the camera to the lab's config, e.g. beamview/configs/211.yaml:
 
 Run with:  python -m beamview.main --config configs/211.yaml
 
+--config accepts a path relative to the current directory OR, failing
+that, relative to the beamview package -- so "configs/211.yaml" resolves
+to beamview/configs/211.yaml from anywhere.
+
+Clickable launcher for beamview (same idea as the IOC one; save it
+anywhere, e.g. the Desktop):
+
+--------------------------------- cut here -----------------------------------
+@echo off
+setlocal
+
+REM --- edit these ---------------------------------------------------------
+set "CONDA=C:\Users\pcdev\AppData\Local\miniforge3"
+set "REPO=C:\Users\pcdev\BBLapps"
+set "CONFIG=configs/211.yaml"
+REM ------------------------------------------------------------------------
+
+title beamview - %CONFIG%
+
+if not exist "%CONDA%\Scripts\activate.bat" (
+    echo ERROR: conda not found at %CONDA%
+    echo        check the path, or run "where conda" in an Anaconda Prompt
+    goto :end
+)
+if not exist "%REPO%\beamview\main.py" (
+    echo ERROR: beamview package not found under %REPO%
+    goto :end
+)
+
+call "%CONDA%\Scripts\activate.bat" "%CONDA%"
+
+REM must run from the repo root -- "python -m beamview.main" finds the
+REM package via the working directory
+cd /d "%REPO%"
+echo Starting beamview  (%CONFIG%)
+echo.
+python -m beamview.main --config %CONFIG%
+
+:end
+echo.
+echo beamview closed. Press any key.
+pause >nul
+--------------------------------- cut here -----------------------------------
+
+Find the conda root with "where conda" in an Anaconda Prompt if the path
+above is wrong (miniforge and miniconda install to different places).
+
+The console window staying open behind the GUI is deliberate -- beamview
+prints worker errors there, which is where the CA array-size message in
+step 7 shows up.  Use pythonw instead of python to suppress it, at the
+cost of losing that output.
+
 
 --------------------------------------------------------------------------------
 9. YOU MAY NOT NEED ANY OF THIS
