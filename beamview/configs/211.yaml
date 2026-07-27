@@ -2,8 +2,9 @@ name: "211"
 epics_prefix: "PPGUN"
 
 cameras:
-  # The GigE camera (192.168.157.12) is no longer connected directly — run a
-  # 'gige' type IOC from the vpcam repo on the camera-subnet machine and add
-  # its prefix here, e.g.:
-  # - id: "PPGUNCAM"
-  - id: "MOCK"   # placeholder so this config loads until the IOC is deployed
+  # Lucid Vision Labs PHX122S-M, 4024x3036 Mono16, at 192.168.157.12.
+  # Served by aravis_ioc.py running on the Windows box on the camera subnet
+  # (see vpcam/docs/how_to_install_iocs_on_windows.txt for that setup).
+  # NOTE: 12.2 Mpx over CA is ~49 MB per frame -- clients need
+  # EPICS_CA_MAX_ARRAY_BYTES well above the old 40 MB default.
+  - id: "PPGUNCAM"

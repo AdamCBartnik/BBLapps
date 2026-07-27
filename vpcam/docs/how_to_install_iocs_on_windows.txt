@@ -1,0 +1,338 @@
+================================================================================
+HOW TO INSTALL A CAMERA IOC ON A WINDOWS COMPUTER
+================================================================================
+
+For running aravis_ioc.py (GigE Vision cameras) on Windows, plus beamview.
+
+Verified end to end on 2026-07-27 setting up the 211 lab camera:
+a Lucid Vision Labs PHX122S-M (4024x3036, Mono16) at 192.168.157.12,
+served as PPGUNCAM.
+
+Why this is more involved than the Linux setup: aravis_ioc needs Aravis
+via GObject introspection ("import gi"), and there is NO conda package for
+Aravis on any platform.  MSYS2 is the only sane source of it on Windows.
+Everything else (caproto, numpy) is easy.
+
+DO NOT try to mix conda's pygobject with MSYS2's Aravis.  conda-forge does
+ship pygobject for Windows and it looks like a shortcut, but the two are
+built against different runtimes and fail at the typelib boundary.  Keep
+the whole GI stack inside MSYS2.
+
+Note the split: the IOC runs on MSYS2's Python, beamview runs on miniforge.
+They talk over EPICS, so they don't need the same Python -- or even the
+same machine (see step 9).
+
+
+--------------------------------------------------------------------------------
+1. INSTALL MSYS2  --  location matters
+--------------------------------------------------------------------------------
+
+Download from https://www.msys2.org and install to:
+
+    C:\TEMP\Install\msys2
+
+DO NOT accept the default C:\msys64 unless you are certain you own it.  On
+a managed/lab machine the installer gets elevated and the tree ends up
+owned by Administrators, and then every pacman command fails with:
+
+    error: failed to synchronize all databases (unable to lock database)
+
+That message is misleading -- it means pacman could not CREATE its lock
+file, not that a lock exists.  If you hit it, check for a real lock first
+(ps aux | grep pacman, then rm -f /var/lib/pacman/db.lck).  If there's no
+lock and no process, it's a permissions problem: either reinstall
+somewhere you own, or from an admin PowerShell run
+    icacls C:\msys64 /grant "$env:USERNAME:(OI)(CI)F" /T
+
+Other placement rules:
+  - no spaces in the path
+  - NOT inside a OneDrive-synced folder (Desktop and Documents often are
+    redirected into OneDrive).  OneDrive holds file handles and breaks
+    lock files in the same way.
+
+Then open "MSYS2 UCRT64" from the Start menu.  Specifically UCRT64 --
+not "MSYS2 MSYS", which has a different package set.
+
+    pacman -Syu
+
+It will likely tell you to close the window partway through.  Close it
+fully, reopen, and rerun until it reports nothing left to do.
+
+(If you instead see corrupted/invalid signature errors, that's the
+separate keyring problem: pacman -S --needed msys2-keyring, and if
+necessary pacman-key --init && pacman-key --populate msys2.)
+
+
+--------------------------------------------------------------------------------
+2. INSTALL THE PACKAGES
+--------------------------------------------------------------------------------
+
+    pacman -S --needed \
+      mingw-w64-ucrt-x86_64-aravis \
+      mingw-w64-ucrt-x86_64-python-gobject \
+      mingw-w64-ucrt-x86_64-python-numpy \
+      mingw-w64-ucrt-x86_64-python-pip
+
+numpy comes from pacman so nothing has to compile.  The aravis package
+ships the introspection typelib (Aravis-0.8.typelib), which is the piece
+that makes "from gi.repository import Aravis" work.
+
+
+--------------------------------------------------------------------------------
+3. MAKE A VENV  --  the --system-site-packages flag is REQUIRED
+--------------------------------------------------------------------------------
+
+MSYS2's Python is PEP 668 "externally managed", so a plain
+"pip install caproto" is refused with error: externally-managed-environment.
+
+    python -m venv --system-site-packages ~/ioc-venv
+    source ~/ioc-venv/bin/activate      # if missing, try ~/ioc-venv/Scripts/activate
+    pip install caproto
+
+--system-site-packages is not optional.  PyGObject cannot be pip-installed
+on Windows -- it has to come from pacman -- so a sealed venv would give you
+caproto and then break "import gi".  That failure is confusing because the
+venv itself looks fine.
+
+Do NOT use --break-system-packages.  It writes into the pacman-managed tree
+and the next pacman -Syu can stomp it.
+
+
+--------------------------------------------------------------------------------
+4. COPY THE IOC FILES
+--------------------------------------------------------------------------------
+
+Copy BOTH of these from the BBLapps repo (vpcam/ioc/) to the machine:
+
+    aravis_ioc.py
+    ad_ioc_base.py
+
+Suggested location:  C:\TEMP\Install\camera_ioc\
+
+The IOC writes .calib_<PREFIX>.json (the um/pixel calibration) into the
+directory it is LAUNCHED FROM, not the script directory.  Always start it
+the same way or the viewscreen calibration appears to reset.
+
+
+--------------------------------------------------------------------------------
+5. VERIFY IN THIS ORDER
+--------------------------------------------------------------------------------
+
+Each step isolates a different layer, so a failure tells you where you are.
+
+  a) Aravis + network see the camera:
+
+        arv-tool-0.8
+
+     If this lists nothing, DON'T PANIC -- arv-tool uses broadcast
+     discovery, while the IOC connects by unicast to an IP you supply.
+     The IOC can work where arv-tool sees nothing.  Carry on to (b).
+
+  b) The typelib loads and caproto is importable:
+
+        python -c "import gi, numpy, caproto; gi.require_version('Aravis','0.8'); from gi.repository import Aravis; print('all ok')"
+
+     This proves pacman's gi/numpy and pip's caproto share one interpreter,
+     which is the whole point of --system-site-packages.
+
+  c) The camera answers -- this is exactly what AravisDriver.__init__ does:
+
+        python -c "
+        import gi; gi.require_version('Aravis','0.8')
+        from gi.repository import Aravis
+        c = Aravis.Camera.new('192.168.157.12')
+        print('vendor:', c.get_vendor_name(), '| model:', c.get_model_name())
+        "
+
+  d) The IOC itself:
+
+        cd /c/TEMP/Install/camera_ioc
+        python aravis_ioc.py 192.168.157.12 PPGUNCAM --list-pvs
+
+     --rate defaults to 0, so it boots IDLE.  It won't stream until a
+     client writes cam1:Acquire (beamview does this).  A quiet log after
+     startup is correct, not a hang.
+
+
+--------------------------------------------------------------------------------
+6. CLICKABLE LAUNCHER (.bat)
+--------------------------------------------------------------------------------
+
+Save as e.g. "Run PPGUN IOC.bat" in C:\TEMP\Install\camera_ioc\.
+It sets the environment itself, so it works from Explorer with no MSYS2
+shell open.
+
+--------------------------------- cut here -----------------------------------
+@echo off
+setlocal
+
+REM --- edit these ---------------------------------------------------------
+set "MSYS2=C:\TEMP\Install\msys2"
+set "IOCDIR=C:\TEMP\Install\camera_ioc"
+set "VENV=%MSYS2%\home\pcdev\ioc-venv"
+
+set "CAMERA_IP=192.168.157.12"
+set "PREFIX=PPGUNCAM"
+set "EXTRA_ARGS="
+REM   ^ if images look like banded noise, use: set "EXTRA_ARGS=--swap-endian"
+REM ------------------------------------------------------------------------
+
+title %PREFIX% camera IOC  (%CAMERA_IP%)
+
+REM Aravis' DLLs and typelib live in the ucrt64 tree
+set "PATH=%MSYS2%\ucrt64\bin;%PATH%"
+set "GI_TYPELIB_PATH=%MSYS2%\ucrt64\lib\girepository-1.0"
+
+REM venv layout varies between Python builds -- accept either
+set "PY=%VENV%\Scripts\python.exe"
+if not exist "%PY%" set "PY=%VENV%\bin\python.exe"
+
+if not exist "%PY%" (
+    echo ERROR: no python.exe under %VENV%
+    echo        checked both \Scripts\ and \bin\
+    goto :end
+)
+if not exist "%IOCDIR%\aravis_ioc.py"  echo ERROR: aravis_ioc.py not in %IOCDIR%  & goto :end
+if not exist "%IOCDIR%\ad_ioc_base.py" echo ERROR: ad_ioc_base.py not in %IOCDIR% & goto :end
+
+cd /d "%IOCDIR%"
+echo Starting %PREFIX% on %CAMERA_IP%   --   Ctrl-C to stop
+echo.
+"%PY%" aravis_ioc.py %CAMERA_IP% %PREFIX% %EXTRA_ARGS%
+
+:end
+echo.
+echo IOC stopped. Press any key to close.
+pause >nul
+--------------------------------- cut here -----------------------------------
+
+The VENV line: the MSYS2 home folder is NOT always your Windows username.
+Check what's actually in C:\TEMP\Install\msys2\home\ , or run
+"cygpath -w ~/ioc-venv" in the MSYS2 shell, and hardcode it.
+
+The trailing pause is deliberate -- without it a startup failure closes
+the window before you can read the error.
+
+(Same lesson as the Linux box, where the run script had to activate the
+conda env INSIDE the screen command: the environment must be established
+by the launcher, never assumed from an interactive session.)
+
+
+--------------------------------------------------------------------------------
+7. CLIENT SIDE: EPICS_CA_MAX_ARRAY_BYTES  (big sensors only)
+--------------------------------------------------------------------------------
+
+Symptom on the beamview machine:
+
+    [worker] get returned 'The requested data transfer is greater than
+    available memory or EPICS_CA_MAX_ARRAY_BYTES'
+    UserWarning: ca.get('PPGUNCAM:image1:ArrayData') timed out
+
+Size it from the WIRE format, not the pixel depth.  CA has no unsigned
+16-bit type, so Mono16 is served as 32-bit:
+
+    bytes = width * height * 4
+
+    4024 x 3036  ->  12,216,864 px  ->  ~49 MB      (211 lab camera)
+
+Set a Windows user/system environment variable:
+
+    EPICS_CA_MAX_ARRAY_BYTES = 100000000
+
+then OPEN A NEW TERMINAL -- Windows does not push environment changes into
+already-running processes, so an old shell still fails and it looks like
+the change didn't work.
+
+beamview also sets a 200 MB default itself (see
+beamview/cameras/epics_areadetector.py), so this is usually unnecessary
+now.  But it uses os.environ.setdefault, meaning an explicit environment
+variable ALWAYS wins -- including one that is too small, which beamview
+then cannot rescue.  If you set it, set it big.
+
+Only the CLIENT needs this.  The IOC is caproto (pure Python) and ignores
+EPICS_CA_MAX_ARRAY_BYTES entirely.
+
+
+--------------------------------------------------------------------------------
+8. BEAMVIEW ON THE SAME (OR ANY) WINDOWS MACHINE
+--------------------------------------------------------------------------------
+
+Beamview is ordinary conda/pip -- no MSYS2 involved.  In miniforge:
+
+    mamba install -c conda-forge numpy scipy "pyqt=5" pyqtgraph h5py pyyaml pyepics
+    pip install opencv-python-headless
+
+Pin pyqt=5: beamview imports PyQt5 explicitly and an unpinned pyqt can
+resolve to Qt6.  opencv is optional but wanted -- it's the fast median
+filter path (~2 ms vs ~250 ms at 2048x1536); without it beamview silently
+falls back to scipy and feels sluggish on big cameras.
+
+Then clone BBLapps and, from its root:  pip install -e .   (for BBL)
+
+Add the camera to the lab's config, e.g. beamview/configs/211.yaml:
+
+    cameras:
+      - id: "PPGUNCAM"
+
+Run with:  python -m beamview.main --config configs/211.yaml
+
+
+--------------------------------------------------------------------------------
+9. YOU MAY NOT NEED ANY OF THIS
+--------------------------------------------------------------------------------
+
+EPICS is a network protocol.  beamview talks Channel Access to whatever
+machine serves the PVs, and does not care where that is.  The IOC only has
+to run on a given Windows box if THAT box is the one on the camera subnet.
+
+If you just want the GUI somewhere new, install beamview (step 8) and
+point it at an existing IOC.  Skip steps 1-6 entirely.
+
+
+--------------------------------------------------------------------------------
+10. GOTCHAS
+--------------------------------------------------------------------------------
+
+"Controller privilege required for streaming control (10)"
+    GigE Vision allows only ONE application to hold streaming control.
+    Register reads are shared, streaming is exclusive -- which is why the
+    IOC can connect, print the model and sensor size, and then fail the
+    moment a client turns on Acquire.
+    Causes, in order of likelihood:
+      - a second copy of the IOC still running (very easy after testing by
+        hand, then double-clicking the .bat).  ps aux | grep aravis_ioc
+      - the camera vendor's own software (ArenaView / Arena SDK) open on
+        any machine on the camera subnet
+      - a stale control channel from a killed process -- the camera holds
+        the lock until its heartbeat expires.  Wait ~15 s, or power-cycle
+        the camera, which clears it for certain.
+    When power-cycling: stop the IOC FIRST, confirm no stray process is
+    alive, then bring the camera up, wait for it to finish booting, and
+    only then start the IOC.
+
+Run only ONE IOC at a time on a machine.
+    On Windows SO_REUSEADDR lets two caproto servers both bind port 5064,
+    and they interfere.  You get confusing CA behaviour on top of any
+    camera conflict.
+
+Firewall: Channel Access and the camera stream are DIFFERENT holes.
+    CA working (clients connect, PVs readable) says nothing about GVSP,
+    the UDP video stream from camera to host.  Windows Firewall will
+    happily block the stream while CA sails through.  Symptom: arv-tool
+    sees the camera but no frames arrive.  Add an inbound rule for MSYS2's
+    python.exe.  ARV_DEBUG=all in the environment shows whether packets
+    are arriving.
+
+--swap-endian: only for FLIR / Point Grey.
+    Some cameras send >8-bit data big-endian while Aravis assumes little
+    (aravis issue #921).  Symptom is noise-like images with wild banding.
+    Lucid cameras do NOT need it -- adding it to a working camera CREATES
+    that exact symptom.
+
+"Failed to start executable - caRepeater" is harmless.
+    Standard pyepics noise on Windows.  Ignore it; it is not related to
+    any of the failures above.
+
+Jumbo frames / MTU are handled automatically.
+    AravisDriver calls gv_auto_packet_size(), which negotiates GVSP packet
+    size for the real path MTU.  No manual tuning needed.

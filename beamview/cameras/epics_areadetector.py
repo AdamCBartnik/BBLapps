@@ -28,7 +28,23 @@ PV naming convention (prefix = e.g. "VPCAM:01" or "VPCAMGW:02"):
 import os
 import time
 
-os.environ.setdefault("EPICS_CA_MAX_ARRAY_BYTES", "40000000")
+# Ceiling on any single CA transfer, read by libca when it initialises --
+# which is why this can't be sized from the camera at runtime: we'd have to
+# connect (initialising libca) before we knew how big to make it.  So it's a
+# generous fixed cap.
+#
+# Size it from the WIRE format, not the pixel depth: CA has no unsigned
+# 16-bit type, so a Mono16 frame is served as 32-bit, i.e.
+# width * height * 4 bytes.  A 4024x3036 Lucid PHX122S-M is 12.2 Mpx ->
+# ~49 MB, which blew past the previous 40 MB default and failed with
+# "The requested data transfer is greater than available memory or
+# EPICS_CA_MAX_ARRAY_BYTES".  200 MB covers sensors up to ~50 Mpx.
+#
+# Modern libca treats this as a cap and grows buffers on demand, so a large
+# value costs nothing until a big frame actually arrives.  setdefault means
+# an explicit environment variable always wins -- including one that's too
+# SMALL, which beamview then cannot rescue.
+os.environ.setdefault("EPICS_CA_MAX_ARRAY_BYTES", "200000000")
 
 import numpy as np
 import epics
