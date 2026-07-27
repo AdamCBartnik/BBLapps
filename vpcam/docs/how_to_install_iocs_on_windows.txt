@@ -312,8 +312,12 @@ Notes on why it's built the way it is -- worth reading before "improving"
 it:
 
   - REPO is deliberately hardcoded rather than derived from the script's
-    own location (%~dp0).  The file gets moved around, so it must not try
-    to locate itself relative to the repo.
+    own location (%~dp0).  Deriving it would work -- the .bat is launched
+    via a shortcut, and a shortcut runs its target from the target's real
+    directory, so %~dp0 resolves correctly -- but CONDA and DEFAULT have
+    to be set by hand anyway, so auto-locating REPO removes one edit out
+    of three while adding a way for the script to guess wrong.  Not worth
+    it; keep all three explicit and together at the top.
 
   - The labels come from each config's "name:" field, so the parse strips
     quotes and leading whitespace but NOT internal spaces: 211.yaml quotes
