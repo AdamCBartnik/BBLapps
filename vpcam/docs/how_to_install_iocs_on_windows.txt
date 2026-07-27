@@ -282,44 +282,115 @@ that, relative to the beamview package -- so "configs/211.yaml" resolves
 to beamview/configs/211.yaml from anywhere.
 
 Clickable launcher for beamview (same idea as the IOC one; save it
-anywhere, e.g. the Desktop):
+anywhere, e.g. the Desktop).  This one lists every config in
+beamview/configs/ by its lab name and lets you pick -- drop a new .yaml
+in there and it appears in the menu automatically, no edit needed here:
 
 --------------------------------- cut here -----------------------------------
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 
 REM --- edit these ---------------------------------------------------------
 set "CONDA=C:\Users\pcdev\AppData\Local\miniforge3"
 set "REPO=C:\Users\pcdev\BBLapps"
-set "CONFIG=configs/211.yaml"
+set "DEFAULT=211.yaml"
+REM   ^ Enter picks this one. Blank it out ("") to make Enter quit instead.
 REM ------------------------------------------------------------------------
 
-title beamview - %CONFIG%
+set "CFGDIR=%REPO%\beamview\configs"
+title beamview
 
 if not exist "%CONDA%\Scripts\activate.bat" (
     echo ERROR: conda not found at %CONDA%
-    echo        check the path, or run "where conda" in an Anaconda Prompt
     goto :end
 )
-if not exist "%REPO%\beamview\main.py" (
-    echo ERROR: beamview package not found under %REPO%
+if not exist "%CFGDIR%" (
+    echo ERROR: no configs directory at %CFGDIR%
     goto :end
 )
 
-call "%CONDA%\Scripts\activate.bat" "%CONDA%"
-
-REM must run from the repo root -- "python -m beamview.main" finds the
-REM package via the working directory
-cd /d "%REPO%"
-echo Starting beamview  (%CONFIG%)
 echo.
-python -m beamview.main --config %CONFIG%
+echo   Which lab?
+echo.
+
+set n=0
+for %%f in ("%CFGDIR%\*.yaml") do (
+    set /a n+=1
+    set "lab=%%~nf"
+    for /f "tokens=1,* delims=:" %%a in ('findstr /b /i /c:"name:" "%%f"') do (
+        set "raw=%%b"
+        set raw=!raw:"=!
+        for /f "tokens=* delims= " %%x in ("!raw!") do set "lab=%%x"
+    )
+    set "file[!n!]=%%~nxf"
+    if /i "%%~nxf"=="%DEFAULT%" (
+        echo      !n!^)  !lab!    ^<-- default
+    ) else (
+        echo      !n!^)  !lab!
+    )
+)
+
+if %n%==0 (
+    echo   ERROR: no .yaml configs found in %CFGDIR%
+    goto :end
+)
+
+echo.
+set "pick="
+if defined DEFAULT (
+    set /p "pick=  Number 1-%n%, or Enter for %DEFAULT% :  "
+) else (
+    set /p "pick=  Number 1-%n%, blank to quit :  "
+)
+
+if not defined pick goto :usedefault
+
+set "valid="
+for /l %%i in (1,1,%n%) do if "%pick%"=="%%i" set valid=1
+if not defined valid (
+    echo.
+    echo   "%pick%" is not one of 1-%n%.
+    goto :end
+)
+call set "CONFIG=%%file[%pick%]%%"
+goto :launch
+
+:usedefault
+if not defined DEFAULT goto :end
+set "CONFIG=%DEFAULT%"
+
+:launch
+call "%CONDA%\Scripts\activate.bat" "%CONDA%"
+cd /d "%REPO%"
+echo.
+echo   Starting beamview  (%CONFIG%)
+echo.
+python -m beamview.main --config configs/%CONFIG%
 
 :end
 echo.
-echo beamview closed. Press any key.
+echo   Closed. Press any key.
 pause >nul
 --------------------------------- cut here -----------------------------------
+
+It produces:
+
+     Which lab?
+
+        1)  211    <-- default
+        2)  B24
+        3)  B29
+        4)  B29 EMPAD
+        5)  Home
+        6)  xLight
+
+       Number 1-6, or Enter for 211.yaml :
+
+The menu labels come from each file's "name:" field, which is why the
+parsing strips quotes but NOT internal spaces -- 211.yaml quotes its name
+("211") while the others don't, and empad.yaml's name contains a space
+("B29 EMPAD").  Tested against quoted, unquoted, spaced, out-of-range,
+non-numeric and bare-Enter input.
 
 Find the conda root with "where conda" in an Anaconda Prompt if the path
 above is wrong (miniforge and miniconda install to different places).
