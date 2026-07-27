@@ -281,141 +281,82 @@ Run with:  python -m beamview.main --config configs/211.yaml
 that, relative to the beamview package -- so "configs/211.yaml" resolves
 to beamview/configs/211.yaml from anywhere.
 
-Clickable launcher for beamview (same idea as the IOC one; save it
-anywhere, e.g. the Desktop).  This one lists every config in
-beamview/configs/ by its lab name and lets you pick -- drop a new .yaml
-in there and it appears in the menu automatically, no edit needed here:
+Clickable launcher for beamview: use the copy kept in the repo at
 
---------------------------------- cut here -----------------------------------
-@echo off
-setlocal enabledelayedexpansion
+    beamview/windows_batch/Beamview.bat        (+ beamview.ico)
 
-REM --- edit these ---------------------------------------------------------
-set "CONDA=C:\Users\pcdev\AppData\Local\miniforge3"
-set "REPO=C:\Users\pcdev\BBLapps"
-set "DEFAULT=211.yaml"
-REM   ^ Enter picks this one. Blank it out ("") to make Enter quit instead.
-REM ------------------------------------------------------------------------
+Copy it wherever you like -- Desktop, Start menu folder, wherever -- and
+edit the three settings at the top:
 
-set "CFGDIR=%REPO%\beamview\configs"
-title beamview
+    CONDA     the miniforge/miniconda root ("where conda" in an Anaconda
+              Prompt if unsure; miniforge and miniconda differ)
+    REPO      the BBLapps checkout
+    DEFAULT   which config Enter picks; blank it to make Enter quit
 
-if not exist "%CONDA%\Scripts\activate.bat" (
-    echo ERROR: conda not found at %CONDA%
-    goto :end
-)
-if not exist "%CFGDIR%" (
-    echo ERROR: no configs directory at %CFGDIR%
-    goto :end
-)
+It presents every config in beamview/configs/ by its lab name:
 
-echo.
-echo   Which lab?
-echo.
+     Which cameras?
 
-set n=0
-for %%f in ("%CFGDIR%\*.yaml") do (
-    set /a n+=1
-    set "lab=%%~nf"
-    set "got="
-    for /f "usebackq tokens=1,* delims=:" %%a in ("%%f") do (
-        if not defined got if /i "%%a"=="name" (
-            set "raw=%%b"
-            set raw=!raw:"=!
-            for /f "tokens=* delims= " %%x in ("!raw!") do set "lab=%%x"
-            set "got=1"
-        )
-    )
-    set "file[!n!]=%%~nxf"
-    if /i "%%~nxf"=="%DEFAULT%" (
-        echo      !n!^)  !lab!    ^<-- default
-    ) else (
-        echo      !n!^)  !lab!
-    )
-)
-
-if %n%==0 (
-    echo   ERROR: no .yaml configs found in %CFGDIR%
-    goto :end
-)
-
-echo.
-set "pick="
-if defined DEFAULT (
-    set /p "pick=  Number 1-%n%, or Enter for %DEFAULT% :  "
-) else (
-    set /p "pick=  Number 1-%n%, blank to quit :  "
-)
-
-if not defined pick goto :usedefault
-
-set "valid="
-for /l %%i in (1,1,%n%) do if "%pick%"=="%%i" set valid=1
-if not defined valid (
-    echo.
-    echo   "%pick%" is not one of 1-%n%.
-    goto :end
-)
-call set "CONFIG=%%file[%pick%]%%"
-goto :launch
-
-:usedefault
-if not defined DEFAULT goto :end
-set "CONFIG=%DEFAULT%"
-
-:launch
-call "%CONDA%\Scripts\activate.bat" "%CONDA%"
-cd /d "%REPO%"
-echo.
-echo   Starting beamview  (%CONFIG%)
-echo.
-python -m beamview.main --config configs/%CONFIG%
-
-:end
-echo.
-echo   Closed. Press any key.
-pause >nul
---------------------------------- cut here -----------------------------------
-
-It produces:
-
-     Which lab?
-
-        1)  211    <-- default
+        1)  211
         2)  B24
         3)  B29
         4)  B29 EMPAD
         5)  Home
-        6)  xLight
+        6)  xLight    <-- default
 
-       Number 1-6, or Enter for 211.yaml :
+       Number 1-6, or Enter for xlight.yaml :
 
-The menu labels come from each file's "name:" field, which is why the
-parsing strips quotes but NOT internal spaces -- 211.yaml quotes its name
-("211") while the others don't, and empad.yaml's name contains a space
-("B29 EMPAD").  Tested against quoted, unquoted, spaced, out-of-range,
-non-numeric and bare-Enter input.
+Drop a new .yaml into beamview/configs/ and it appears automatically.
 
-Note the inner loop reads each .yaml DIRECTLY -- for /f "usebackq" on a
-quoted filename opens the file, with no process spawned.  An earlier
-version used findstr, which costs a cmd.exe AND a findstr.exe per config;
-on a managed machine where endpoint protection scans every process launch
-that produced a visible stutter as the menu drew itself, line by line.
-Here it went from 145 ms to 31 ms, and the gap is much wider on a machine
-with aggressive scanning.  The "got" flag stops at the first name: line,
-since batch has no way to break out of a for.
+Notes on why it's built the way it is -- worth reading before "improving"
+it:
 
-If a config's name: is ever indented, the label falls back to the
-filename -- the comparison expects it at column 0, which is where all
-current configs have it.
+  - REPO is deliberately hardcoded rather than derived from the script's
+    own location (%~dp0).  The file gets moved around, so it must not try
+    to locate itself relative to the repo.
 
-Find the conda root with "where conda" in an Anaconda Prompt if the path
-above is wrong (miniforge and miniconda install to different places).
+  - The labels come from each config's "name:" field, so the parse strips
+    quotes and leading whitespace but NOT internal spaces: 211.yaml quotes
+    its name ("211") while the others don't, and empad.yaml's name has a
+    space in it ("B29 EMPAD").  If a config's name: is ever indented, the
+    label falls back to the filename -- the match expects column 0, which
+    is where all current configs have it.
 
-The console window staying open behind the GUI is deliberate -- beamview
-prints worker errors there, which is where the CA array-size message in
-step 7 shows up.  Use pythonw instead of python to suppress it, at the
-cost of losing that output.
+  - The inner loop reads each .yaml DIRECTLY: for /f "usebackq" on a
+    quoted filename opens the file with no process spawned.  An earlier
+    version used findstr, which costs a cmd.exe AND a findstr.exe per
+    config; on a managed machine where endpoint protection scans every
+    process launch, that produced a visible stutter as the menu drew
+    itself line by line (145 ms -> 31 ms on a machine WITHOUT aggressive
+    scanning, much more with).  The "got" flag stops at the first name:
+    line, batch having no way to break a for loop.
+
+  - The console window stays open behind the GUI on purpose -- beamview
+    prints worker errors there, which is where the CA array-size message
+    in step 7 shows up.  Swap python for pythonw to suppress it, at the
+    cost of losing that output.  The trailing pause is likewise
+    deliberate: without it a startup failure closes the window before you
+    can read the traceback.
+
+  - If "call activate.bat" reports "libmamba Shell not initialized", conda
+    was never initialised for cmd.exe on that machine.  The script carries
+    on regardless and python then resolves off PATH, which may be the
+    wrong interpreter or none.  The fix that needs no shell init is to set
+    PATH and call the interpreter directly instead of activating:
+
+        set "PATH=%CONDA%;%CONDA%\Library\mingw-w64\bin;%CONDA%\Library\usr\bin;%CONDA%\Library\bin;%CONDA%\Scripts;%CONDA%\bin;%PATH%"
+        "%CONDA%\python.exe" -m beamview.main --config configs/%CONFIG%
+
+    That is what activate does to PATH for the base environment, minus the
+    shell hooks (so it skips any activate.d scripts -- base rarely has any).
+
+To give it the icon, make a Windows SHORTCUT to the .bat -- a batch file
+cannot set its own icon.  Right-click the shortcut, Properties, Change
+Icon, point at beamview.ico.  A shortcut is also what you need to pin it
+to the taskbar or Start menu.
+
+*.bat is pinned to CRLF in .gitattributes.  Batch tolerates LF for simple
+scripts but goto/label handling gets flaky, and this launcher is all goto.
 
 
 --------------------------------------------------------------------------------
