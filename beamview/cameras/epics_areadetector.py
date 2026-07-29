@@ -78,11 +78,18 @@ class EPICSAreaDetectorCamera(CameraBase):
         # single-frame camera waiting for an image2 PV that never connects.
         self._has_image2 = bool(dual_frame)
 
-        # Cache of persistent, auto-monitored PVs. Reads are served from the
-        # local monitor cache (get(use_monitor=True)) — no per-frame CA
-        # round-trips. A fresh caget costs ~15-20 ms each in pyepics; a frame
-        # needs several scalars + the big ArrayData(s), which used to exceed
-        # the inter-frame interval and trigger the atomicity retry loop.
+        # Cache of persistent PVs. Scalar reads are served from the local
+        # monitor cache (get(use_monitor=True)) — no per-frame CA round-trips.
+        # A fresh caget costs ~15-20 ms each in pyepics; a frame needs several
+        # scalars, which used to exceed the inter-frame interval and trigger
+        # the atomicity retry loop.
+        #
+        # The IMAGE arrays are the exception: they are not monitored (see
+        # _pv), so they cost a real CA transfer per read. That is deliberate
+        # — the alternative is subscribing to every frame the camera
+        # produces, which is unbounded when the client is slower than the
+        # camera. Pulling costs more per frame but is bounded by OUR read
+        # rate, not the camera's.
         self._pvs: dict = {}
 
         # Monitor ArrayCounter_RBV — fires whenever a new frame is published.
@@ -96,10 +103,28 @@ class EPICSAreaDetectorCamera(CameraBase):
         )
 
     def _pv(self, suffix: str) -> "epics.PV":
-        """Return a cached, auto-monitored PV for prefix+suffix."""
+        """Return a cached PV for prefix+suffix.
+
+        auto_monitor is deliberately NOT forced on: pyepics decides by
+        size, enabling it only below ca.AUTOMONITOR_MAXLENGTH (65536
+        elements).  That keeps every cheap scalar monitor-cached -- the
+        whole point of this cache -- while leaving a multi-megapixel
+        ArrayData unsubscribed.
+
+        Forcing auto_monitor=True here used to override that guard, so
+        beamview subscribed to EVERY frame of a 12.2 Mpx camera (~49 MB
+        per update as CA LONG) while consuming only at its display rate.
+        The IOC's subscription queue absorbed the difference and the
+        server ran out of memory in about a minute.  pyepics' size rule
+        exists precisely to prevent that; don't override it again.
+
+        Images are now pulled on demand instead (see _read_image), paced
+        by the ArrayCounter_RBV monitor below, which is a scalar and
+        stays monitored.
+        """
         pv = self._pvs.get(suffix)
         if pv is None:
-            pv = epics.PV(self._prefix + suffix, auto_monitor=True)
+            pv = epics.PV(self._prefix + suffix)
             self._pvs[suffix] = pv
         return pv
 

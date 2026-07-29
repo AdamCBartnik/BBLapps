@@ -43,18 +43,20 @@ _DATATYPE_BITS = {
     "Float32": 32, "Float64": 64,
 }
 
-# Cached, auto-monitored PVs for the (large) image waveform only -- caget()
-# above is scalar-oriented (nanmean/nanstd over samples), not appropriate
-# for an array value, so the image gets its own small cache here, read
-# through the monitor (use_monitor=True): a plain, un-cached
-# epics.caget()/PV.get(use_monitor=False) issues a FRESH Channel Access get
-# every call and waits for the IOC to service it -- for a multi-megapixel
-# waveform that round trip is slow, and on some IOCs/drivers a paused
-# camera's non-monitor get path is routed through the driver rather than
-# just handing back the last written buffer, making it slower still. A
-# monitor delivers the CURRENT value immediately on subscription (per CA
-# protocol) and every call after the first is a local cache read -- fast
-# and current regardless of whether the camera is actively acquiring.
+# Cached PVs for the (large) image waveform only -- caget() above is
+# scalar-oriented (nanmean/nanstd over samples), not appropriate for an
+# array value, so the image gets its own small cache here. The PV object
+# is reused so repeated get_frame() calls don't pay reconnection cost.
+#
+# use_monitor=True below is a no-op unless pyepics actually monitored the
+# channel (it does so only under ca.AUTOMONITOR_MAXLENGTH = 65536
+# elements); above that it falls through to a fresh CA get. So SMALL
+# cameras keep the monitor-cache speedup -- including the fast paused-
+# camera read, since a monitor delivers the current value on subscription
+# whether or not acquisition is running -- while big ones do a real
+# transfer per call rather than subscribing to every frame forever.
+# A paused multi-megapixel camera may therefore be slower to read than it
+# was; that is the deliberate trade for not melting the IOC.
 _array_pvs = {}
 
 
@@ -62,7 +64,14 @@ def _get_array_pv(pvname):
     import epics
     pv = _array_pvs.get(pvname)
     if pv is None:
-        pv = epics.PV(pvname, auto_monitor=True)
+        # auto_monitor is left to pyepics, which enables it only below
+        # ca.AUTOMONITOR_MAXLENGTH (65536 elements). Forcing it True
+        # subscribed this cached, process-lifetime PV to EVERY frame --
+        # fine for a small camera, but on a 12.2 Mpx one it means a
+        # notebook that called get_frame() once keeps pulling ~49 MB per
+        # frame forever, and the IOC's subscription queue grows without
+        # bound when the reader is slower than the camera.
+        pv = epics.PV(pvname)
         _array_pvs[pvname] = pv
     return pv
 

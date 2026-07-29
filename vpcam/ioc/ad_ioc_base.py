@@ -790,11 +790,25 @@ class ADCameraIOCBase(PVGroup):
         except the prefix:ArrayCounter_RBV monitor PV). Returns (w, h)."""
         h, w = img.shape
         flat = np.ascontiguousarray(img, dtype=buf.dtype).reshape(-1)
-        buf.fill(0)
         ncopy = min(flat.size, buf.size)
         buf[:ncopy] = flat[:ncopy]
 
-        await getattr(self, f"{prefix}_ArrayData").write(buf.copy())
+        # Publish only the ACTIVE w*h prefix, not the whole fixed-NELM
+        # buffer.  _max_length stays at the full sensor size (the NELM a
+        # client sees), but the value carried each frame is just the live
+        # region -- which is what genuine NDStdArrays does, and what this
+        # module's contract docstring has always claimed.
+        #
+        # Publishing the full buffer made the hardware ROI cosmetic: a
+        # 20x20 crop on a 4024x3036 sensor still shipped 12.2 M elements
+        # (~49 MB as CA LONG) per frame.  With a monitoring client that
+        # can't drain that fast, the server-side subscription queue grows
+        # without bound -- observed on the 211 camera as memory climbing
+        # to 100% within a minute of beamview connecting, at a rate
+        # independent of ROI.  Now a 20x20 crop ships 400 elements.
+        # (There is no fill(0) any more either: the tail is never
+        # published, so zeroing 12 M elements per frame was pure waste.)
+        await getattr(self, f"{prefix}_ArrayData").write(buf[:ncopy].copy())
         await getattr(self, f"{prefix}_ArraySize0_RBV").write(w)
         await getattr(self, f"{prefix}_ArraySize1_RBV").write(h)
         await getattr(self, f"{prefix}_TimeStamp_RBV").write(now)
