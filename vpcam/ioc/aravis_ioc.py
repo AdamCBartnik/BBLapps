@@ -46,7 +46,16 @@ Then `arv-tool-0.8` lists cameras, and this IOC runs.
 
 Usage:
     python aravis_ioc.py CAMERA_IP PREFIX [--rate HZ] [--swap-endian]
-                         [caproto options, e.g. --list-pvs]
+                         [--binning N] [caproto options, e.g. --list-pvs]
+
+--binning N: hardware binning, NxN pixels combined on the camera before
+readout (same factor both axes).  Frame size falls as N^2 -- on the 211
+lab's 4024x3036 Lucid, --binning 2 gives 2012x1518, a quarter of the
+pixels -- and because it happens before readout it cuts sensor time, GigE
+bandwidth, CA transfer and downstream processing together, which software
+binning would not.  cam1:CalibX/Y are scaled to match (see
+load_calibration); the calibration FILE always holds the 1x1 value, so one
+calibration stays correct at any binning.
 
 --swap-endian: some cameras send >8-bit pixel data big-endian and Aravis
 assumes little-endian (FLIR/Point Grey Blackfly, e.g. BFLY-PGE-31S4M —
@@ -84,7 +93,7 @@ class AravisDriver(CameraDriver):
     extension_pvs: list = []
 
     def __init__(self, ip_address: str, swap_endian: bool = False,
-                 calib_file: str | None = None):
+                 calib_file: str | None = None, binning: int = 1):
         import gi
         gi.require_version("Aravis", "0.8")
         from gi.repository import Aravis
@@ -147,9 +156,58 @@ class AravisDriver(CameraDriver):
         except Exception:
             pass
 
+        # -- hardware binning ------------------------------------------------
+        # Combine NxN pixels ON THE CAMERA, before readout and transfer, so
+        # the saving is in sensor readout time, GigE bandwidth, CA transfer
+        # and every downstream copy -- not just in the final array size.
+        # Software binning would move none of that.  Frame size falls as N^2:
+        # --binning 2 turns a 4024x3036 (12.2 Mpx) frame into 2012x1518
+        # (3.1 Mpx).
+        #
+        # Applied BEFORE geometry is read below, because binning changes the
+        # largest frame the camera can deliver.
+        self._binning = max(1, int(binning))
+        if self._binning > 1:
+            try:
+                self._cam.set_binning(self._binning, self._binning)
+                bx, by = self._cam.get_binning()
+                if (int(bx), int(by)) != (self._binning, self._binning):
+                    # Camera snapped to something it supports (or only bins
+                    # one axis). Trust what it reports -- the calibration
+                    # scaling below depends on the ACTUAL factor.
+                    print(f"[aravis] WARNING: requested binning "
+                          f"{self._binning}x{self._binning}, camera reports "
+                          f"{bx}x{by}; using {bx}")
+                    self._binning = int(bx)
+            except Exception as e:
+                print(f"[aravis] WARNING: binning {self._binning} could not "
+                      f"be set ({e}) -- continuing UNBINNED at full "
+                      f"resolution. Calibration is NOT rescaled.")
+                self._binning = 1
+
+        # SensorWidth/SensorHeight are the PHYSICAL sensor and, per GenICam
+        # SFNC, do NOT shrink with binning -- WidthMax/HeightMax do.  So ask
+        # for the width/height bounds, which reflect the binning just set.
+        # Only when binning: at 1x this keeps the previous behaviour exactly.
+        sensor_w, sensor_h = self._cam.get_sensor_size()
+        if self._binning > 1:
+            try:
+                sensor_w = self._cam.get_width_bounds()[1]
+                sensor_h = self._cam.get_height_bounds()[1]
+            except Exception:
+                sensor_w = int(sensor_w) // self._binning
+                sensor_h = int(sensor_h) // self._binning
+            # Changing binning can leave Width/Height at their pre-binning
+            # values; start from a known full (binned) frame.
+            dev = self._cam.get_device()
+            self._set_int_feature(dev, "OffsetX", 0)
+            self._set_int_feature(dev, "OffsetY", 0)
+            self._set_int_feature(dev, "Width", int(sensor_w))
+            self._set_int_feature(dev, "Height", int(sensor_h))
+
         self._apply_startup_defaults()
 
-        self._sensor_w, self._sensor_h = self._cam.get_sensor_size()
+        self._sensor_w, self._sensor_h = int(sensor_w), int(sensor_h)
         self._stream = None
         self._streaming = False
         # Auto-recovery state: GigE streams occasionally wedge into a state
@@ -161,8 +219,16 @@ class AravisDriver(CameraDriver):
         self._lock = threading.Lock()
 
         swap_note = ", swapping pixel endianness" if self._swap_endian else ""
+        bin_note = (f", binning {self._binning}x{self._binning}"
+                    if self._binning > 1 else "")
         print(f"[aravis] connected: {self.manufacturer} {self.model}, "
-              f"{self._sensor_w}x{self._sensor_h}, Mono{self._bits}{swap_note}")
+              f"{self._sensor_w}x{self._sensor_h}, Mono{self._bits}"
+              f"{swap_note}{bin_note}")
+        if self._binning > 1:
+            print(f"[aravis] binned frame is "
+                  f"{self._sensor_w * self._sensor_h / 1e6:.1f} Mpx "
+                  f"({self._binning ** 2}x fewer pixels); cam1:CalibX/Y are "
+                  f"scaled by {self._binning} to match")
 
     def _apply_startup_defaults(self):
         """Put the camera in plain manual-exposure mode.
@@ -277,13 +343,25 @@ class AravisDriver(CameraDriver):
 
     # -- calibration persistence ---------------------------------------------------
 
+    # The file always stores the UNBINNED (1x1) um/pixel; the PV carries the
+    # value for the binning actually in use.  Binning NxN makes each
+    # delivered pixel cover N times the distance, so cam1:CalibX/Y must
+    # scale with it or every measurement in physical units is wrong by a
+    # factor of N -- silently, since the images still look perfectly fine.
+    #
+    # Normalising in the FILE rather than the PV means one calibration is
+    # valid at every binning: calibrate at 1x and run binned, or calibrate
+    # binned and run at 1x, and both come out right.  Files written before
+    # binning existed were all 1x, so they load correctly unchanged.
+
     def load_calibration(self):
         f = self._calib_file
         if f is None or not f.exists():
             return None
         try:
             d = json.loads(f.read_text())
-            return float(d["calib_x_um"]), float(d["calib_y_um"])
+            return (float(d["calib_x_um"]) * self._binning,
+                    float(d["calib_y_um"]) * self._binning)
         except Exception as e:
             print(f"[aravis] calibration load ({f}): {e}")
             return None
@@ -294,9 +372,12 @@ class AravisDriver(CameraDriver):
             return
         try:
             tmp = f.with_name(f.name + ".tmp")
-            tmp.write_text(json.dumps({"calib_x_um": float(cal_x_um),
-                                       "calib_y_um": float(cal_y_um)},
-                                      indent=2) + "\n")
+            tmp.write_text(json.dumps(
+                {"calib_x_um": float(cal_x_um) / self._binning,
+                 "calib_y_um": float(cal_y_um) / self._binning,
+                 "_note": "um/pixel at 1x1 binning; the IOC scales by the "
+                          "binning in use"},
+                indent=2) + "\n")
             tmp.replace(f)   # atomic-ish: no torn file on a crash mid-write
         except Exception as e:
             print(f"[aravis] calibration save ({f}): {e}")
@@ -505,6 +586,15 @@ def _parse_args(argv):
              "(default 0 = boot idle; clients start via cam1:Acquire)",
     )
     parser.add_argument(
+        "--binning", type=int, default=1, metavar="N",
+        help="Hardware binning: combine NxN pixels ON THE CAMERA before "
+             "readout, same factor both axes (default 1 = off). Frame size "
+             "falls as N^2, so --binning 2 turns a 4024x3036 (12.2 Mpx) "
+             "frame into 2012x1518 (3.1 Mpx), cutting readout, network, CA "
+             "transfer and downstream processing together. cam1:CalibX/Y "
+             "are scaled automatically. Falls back to unbinned with a "
+             "warning if the camera doesn't support it.")
+    parser.add_argument(
         "--swap-endian", "--swap_endian", action="store_true",
         help="Byte-swap >8-bit pixel data before serving. Needed for cameras "
              "that send big-endian while Aravis assumes little-endian "
@@ -532,7 +622,7 @@ def main():
     print(f"[aravis] calibration file: {calib_file} ({state})")
 
     driver = AravisDriver(args.camera_ip, swap_endian=args.swap_endian,
-                          calib_file=calib_file)
+                          calib_file=calib_file, binning=args.binning)
 
     IOCClass = build_ioc_class(AravisDriver)
     ioc_options, run_options = ioc_arg_parser(
