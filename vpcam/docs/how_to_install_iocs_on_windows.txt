@@ -100,15 +100,39 @@ and the next pacman -Syu can stomp it.
 
 
 --------------------------------------------------------------------------------
-4. COPY THE IOC FILES
+4. GET THE IOC FILES ONTO THE MACHINE
 --------------------------------------------------------------------------------
 
-Copy BOTH of these from the BBLapps repo (vpcam/ioc/) to the machine:
+The IOC is two files from the BBLapps repo (vpcam/ioc/):
 
     aravis_ioc.py
     ad_ioc_base.py
 
-Suggested location:  C:\TEMP\Install\camera_ioc\
+PREFERRED, if the machine has a BBLapps checkout: DON'T COPY THEM.  Run
+the script out of the repo by full path and let "git pull" be the entire
+deployment step:
+
+    "%PY%" "C:\Users\pcdev\BBLapps\vpcam\ioc\aravis_ioc.py" IP PREFIX ...
+
+Python puts the SCRIPT's directory on sys.path, so ad_ioc_base resolves
+from the repo automatically -- you don't need the repo on PYTHONPATH and
+you don't need to be in that directory.  Keep the working directory
+wherever the calibration should live (see below); the two are independent.
+
+Copying is still right for a machine with no checkout (the Pis, say).  But
+copies go stale silently: a "git pull" updates the repo and leaves the
+copy untouched, and the symptom is baffling -- a new flag rejected as
+"unrecognized arguments" by caproto's parser rather than by the IOC's, or
+worse, a fix you believe is deployed that isn't.  If you do copy, copy
+BOTH files every time; ad_ioc_base changes more often than it looks.
+
+DO NOT try to bridge the two with a hard link (mklink /H).  It needs no
+admin, which makes it tempting, but git replaces a modified file by
+writing a temp and renaming over it -- that severs the link, and the
+"linked" copy silently keeps serving the OLD content.  Verified, not
+folklore.  A true symlink (mklink, no /H) does work, because it points at
+a path rather than the file's data, but creating one needs Administrator
+or Developer Mode.
 
 The IOC writes .calib_<PREFIX>.json (the um/pixel calibration) into the
 directory it is LAUNCHED FROM, not the script directory.  Always start it
