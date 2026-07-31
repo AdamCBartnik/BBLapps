@@ -193,14 +193,25 @@ setlocal
 
 REM --- edit these ---------------------------------------------------------
 set "MSYS2=C:\TEMP\Install\msys2"
+set "REPO=C:\Users\pcdev\BBLapps"
 set "IOCDIR=C:\TEMP\Install\camera_ioc"
 set "VENV=%MSYS2%\home\pcdev\ioc-venv"
 
 set "CAMERA_IP=192.168.157.12"
 set "PREFIX=PPGUNCAM"
-set "EXTRA_ARGS="
-REM   ^ if images look like banded noise, use: set "EXTRA_ARGS=--swap-endian"
+set "EXTRA_ARGS=--binning 4"
+REM   ^ flags are combinable, e.g. "--binning 4 --swap-endian".
+REM     --binning N: NxN hardware binning, frame shrinks by N^2. The lever
+REM       for a camera with too many pixels (see step 7). CalibX/Y scale
+REM       automatically.
+REM     --swap-endian: ONLY if images look like banded noise. Lucid does
+REM       not need it and adding it CREATES that symptom.
 REM ------------------------------------------------------------------------
+
+REM REPO is the git checkout -- the IOC runs STRAIGHT OUT OF IT, so a
+REM "git pull" is the whole deployment step (see step 4). IOCDIR is only
+REM the working directory, so .calib_<PREFIX>.json stays put.
+set "IOCSRC=%REPO%\vpcam\ioc"
 
 title %PREFIX% camera IOC  (%CAMERA_IP%)
 
@@ -217,13 +228,25 @@ if not exist "%PY%" (
     echo        checked both \Scripts\ and \bin\
     goto :end
 )
-if not exist "%IOCDIR%\aravis_ioc.py"  echo ERROR: aravis_ioc.py not in %IOCDIR%  & goto :end
-if not exist "%IOCDIR%\ad_ioc_base.py" echo ERROR: ad_ioc_base.py not in %IOCDIR% & goto :end
+if not exist "%IOCSRC%\aravis_ioc.py" (
+    echo ERROR: aravis_ioc.py not found in %IOCSRC%
+    echo        is REPO set to the right checkout?
+    goto :end
+)
+if not exist "%IOCSRC%\ad_ioc_base.py" (
+    echo ERROR: ad_ioc_base.py not found in %IOCSRC%
+    goto :end
+)
+if not exist "%IOCDIR%" (
+    echo ERROR: working directory %IOCDIR% does not exist
+    goto :end
+)
 
 cd /d "%IOCDIR%"
 echo Starting %PREFIX% on %CAMERA_IP%   --   Ctrl-C to stop
+echo   running from %IOCSRC%
 echo.
-"%PY%" aravis_ioc.py %CAMERA_IP% %PREFIX% %EXTRA_ARGS%
+"%PY%" "%IOCSRC%\aravis_ioc.py" %CAMERA_IP% %PREFIX% %EXTRA_ARGS%
 
 :end
 echo.
@@ -432,6 +455,20 @@ Firewall: Channel Access and the camera stream are DIFFERENT holes.
     sees the camera but no frames arrive.  Add an inbound rule for MSYS2's
     python.exe.  ARV_DEBUG=all in the environment shows whether packets
     are arriving.
+
+--binning N: the fix for "this camera has too many pixels".
+    NxN pixels combined ON THE CAMERA before readout, so the saving is in
+    sensor time, GigE bandwidth, CA transfer and downstream processing at
+    once -- software binning would move none of it.  Frame shrinks by N^2.
+    The 211 Lucid runs --binning 4: 4024x3036 (12.2 Mpx) -> 1004x758
+    (0.8 Mpx).  cam1:CalibX/Y are scaled automatically (the calibration
+    FILE always stores the 1x1 value, so one calibration is valid at any
+    binning).
+    Expect the binned size to be slightly under sensor/N: Width and Height
+    carry GenICam increments, so 4024/4 = 1006 snaps down to 1004 (Width
+    increments by 4).  The IOC reports what the camera actually accepts,
+    and says so at startup -- "full binned frame is 1004x758, not
+    1006x758".  That is correct, not a fault.
 
 --swap-endian: leave it OFF unless you know you need it.
     Some cameras send >8-bit data big-endian while Aravis assumes little
