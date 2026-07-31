@@ -204,6 +204,30 @@ class AravisDriver(CameraDriver):
             self._set_int_feature(dev, "OffsetY", 0)
             self._set_int_feature(dev, "Width", int(sensor_w))
             self._set_int_feature(dev, "Height", int(sensor_h))
+            # ...then believe the CAMERA, not the bounds. A bound's maximum
+            # need not be attainable: Width/Height carry GenICam increments,
+            # and _set_int_feature snaps down onto that grid. On the 211
+            # Lucid at binning 4 the bounds say 1006x759, but Width has an
+            # increment of 4 (1006 is not a multiple of 4 -> 1004) and
+            # Height is even-only (759 is odd -> 758).
+            #
+            # Advertising an unattainable MaxSizeX/Y is not cosmetic: every
+            # ROI conversion is relative to it, so a full-frame ROI came
+            # back as x=[2, 1005] instead of [0, 1005] and no amount of
+            # typing 0 or hitting Reset could reach the left edge.
+            try:
+                _, _, actual_w, actual_h = self._cam.get_region()
+                if actual_w > 0 and actual_h > 0:
+                    if (int(actual_w), int(actual_h)) != (int(sensor_w),
+                                                          int(sensor_h)):
+                        print(f"[aravis] full binned frame is "
+                              f"{actual_w}x{actual_h}, not {sensor_w}x"
+                              f"{sensor_h} (GenICam size increments); "
+                              f"reporting the attainable size")
+                    sensor_w, sensor_h = int(actual_w), int(actual_h)
+            except Exception as e:
+                print(f"[aravis] could not read back the binned region "
+                      f"({e}); using {sensor_w}x{sensor_h} from the bounds")
 
         self._apply_startup_defaults()
 
