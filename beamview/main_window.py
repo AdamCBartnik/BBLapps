@@ -324,6 +324,10 @@ class MainWindow(QMainWindow):
         self._subtract_bg_chk = QCheckBox("Subtract BG")
         self._subtract_bg_chk.setEnabled(False)
         self._subtract_bg_chk.toggled.connect(self._trigger_redraw)
+        # Frame averaging buffers frames from AFTER this point in the
+        # pipeline, so changing it invalidates whatever is already
+        # accumulated -- see _reset_frame_avg.
+        self._subtract_bg_chk.toggled.connect(self._reset_frame_avg)
         # Saving is blocked while subtraction is active: the background is
         # captured from the processed pipeline (post-subtract), so allowing it
         # would save an already-subtracted image and poison later subtraction
@@ -365,6 +369,7 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._range_min_edit, 0, 1)
         self._allow_neg_chk = QCheckBox("Allow Negative")
         self._allow_neg_chk.toggled.connect(self._trigger_redraw)
+        self._allow_neg_chk.toggled.connect(self._reset_frame_avg)
         grid.addWidget(self._allow_neg_chk, 0, 2)
 
         grid.addWidget(QLabel("Max:"), 1, 0, Qt.AlignRight)
@@ -614,16 +619,21 @@ class MainWindow(QMainWindow):
         row1 = QHBoxLayout()
         self._threshold_chk = QCheckBox("Threshold")
         self._threshold_chk.toggled.connect(self._trigger_redraw)
+        # Absolute thresholding happens per-frame BEFORE averaging, so it is
+        # upstream too (Percent is applied after, and is harmless here).
+        self._threshold_chk.toggled.connect(self._reset_frame_avg)
         self._threshold_spin = QDoubleSpinBox()
         self._threshold_spin.setRange(0, 100)
         self._threshold_spin.setFixedWidth(50)
         self._threshold_spin.editingFinished.connect(self._trigger_redraw)
         self._threshold_spin.valueChanged.connect(self._trigger_redraw)
+        self._threshold_spin.valueChanged.connect(self._reset_frame_avg)
         self._threshold_type_combo = QComboBox()
         self._threshold_type_combo.addItems(["Percent", "Absolute"])
         self._threshold_type_combo.setFixedWidth(75)
         self._threshold_type_combo.currentTextChanged.connect(self._on_threshold_type_changed)
         self._threshold_type_combo.currentTextChanged.connect(self._trigger_redraw)
+        self._threshold_type_combo.currentTextChanged.connect(self._reset_frame_avg)
         row1.addWidget(self._threshold_chk)
         row1.addWidget(self._threshold_spin)
         row1.addWidget(self._threshold_type_combo)
@@ -871,6 +881,21 @@ class MainWindow(QMainWindow):
         self._sy_buf.clear()
 
     def _reset_frame_avg(self):
+        """Discard the accumulated average and its buffered frames.
+
+        The averager stores frames from PART-WAY down the pipeline (after
+        background subtraction and the absolute threshold), so any change
+        upstream of it makes what's already buffered incomparable to what
+        arrives next.  Without this, toggling Subtract BG while frames were
+        buffered left up to N pre-subtraction frames in the window, and the
+        displayed "average" was a blend of subtracted and unsubtracted data
+        that decayed away over the next N frames -- looking like a
+        beautifully resolved image that slowly faded, for no visible reason.
+
+        Deliberately NOT wired to the frame-averaging checkbox itself: if
+        nothing upstream changed, resuming a still-valid average on re-enable
+        is useful, and it costs N frames to rebuild.
+        """
         self._frame_avg_sum = None   # forces a full buffer reset on next frame
 
     @staticmethod
