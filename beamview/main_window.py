@@ -39,6 +39,26 @@ EPICS_PREFIXES = [
 FRAME_AVG_PX_BUDGET = 10_000 * 128 * 128
 
 
+class TrimmedDoubleSpinBox(QDoubleSpinBox):
+    """A QDoubleSpinBox that doesn't pad the display with trailing zeros.
+
+    decimals() serves two jobs in Qt that we want separated: it sets how
+    precise a typed value may be, AND how many digits are always shown.
+    The threshold is nearly always a round number (5%, 20%), but must still
+    accept the occasional 0.1% — and a plain box with decimals=3 renders
+    those round numbers as "5.000".
+
+    Formatting without the trailing zeros keeps both behaviours: type 5 and
+    see "5", type 0.1 and see "0.1". Values are unchanged; only the text is.
+    """
+
+    def textFromValue(self, value: float) -> str:
+        s = f"{value:.{self.decimals()}f}"
+        if "." in s:
+            s = s.rstrip("0").rstrip(".")
+        return s or "0"
+
+
 class FrameWorker(QObject):
     """Captures frames on a background thread so the Qt event loop stays free."""
     frame_ready = pyqtSignal(object)   # emits (img1, img2); img2 None if single
@@ -418,16 +438,18 @@ class MainWindow(QMainWindow):
         nn_row = QHBoxLayout()
         self._nn_chk = QCheckBox("NxN:")
         self._nn_chk.toggled.connect(self._trigger_redraw)
+        # 50x50 suits the cameras in use far better than 5x5; the boxes are
+        # widened to fit three digits plus the spin arrows.
         self._nn_x_spin = QSpinBox()
         self._nn_x_spin.setRange(1, 500)
-        self._nn_x_spin.setValue(5)
-        self._nn_x_spin.setFixedWidth(45)
+        self._nn_x_spin.setValue(50)
+        self._nn_x_spin.setFixedWidth(60)
         self._nn_x_spin.editingFinished.connect(self._trigger_redraw)
         self._nn_x_spin.valueChanged.connect(self._trigger_redraw)
         self._nn_y_spin = QSpinBox()
         self._nn_y_spin.setRange(1, 500)
-        self._nn_y_spin.setValue(5)
-        self._nn_y_spin.setFixedWidth(45)
+        self._nn_y_spin.setValue(50)
+        self._nn_y_spin.setFixedWidth(60)
         self._nn_y_spin.editingFinished.connect(self._trigger_redraw)
         self._nn_y_spin.valueChanged.connect(self._trigger_redraw)
         nn_row.addWidget(self._nn_chk)
@@ -622,8 +644,14 @@ class MainWindow(QMainWindow):
         # Absolute thresholding happens per-frame BEFORE averaging, so it is
         # upstream too (Percent is applied after, and is harmless here).
         self._threshold_chk.toggled.connect(self._reset_frame_avg)
-        self._threshold_spin = QDoubleSpinBox()
+        # decimals(3) is what the box will ACCEPT (0.1%, and finer on the one
+        # camera that has ever needed it); TrimmedDoubleSpinBox keeps it from
+        # displaying "5.000" for the round values used the rest of the time.
+        # The step is set per type in _on_threshold_type_changed.
+        self._threshold_spin = TrimmedDoubleSpinBox()
+        self._threshold_spin.setDecimals(3)
         self._threshold_spin.setRange(0, 100)
+        self._threshold_spin.setSingleStep(5.0)
         self._threshold_spin.setFixedWidth(50)
         self._threshold_spin.editingFinished.connect(self._trigger_redraw)
         self._threshold_spin.valueChanged.connect(self._trigger_redraw)
@@ -917,8 +945,11 @@ class MainWindow(QMainWindow):
     def _on_threshold_type_changed(self, text):
         if text == "Percent":
             self._threshold_spin.setRange(0, 100)
+            self._threshold_spin.setSingleStep(5.0)   # 5%, 10%, 15%, ...
         else:
             self._threshold_spin.setRange(-1e9, 1e9)
+            # Absolute is raw counts, where 5-per-click would be arbitrary
+            self._threshold_spin.setSingleStep(1.0)
 
     def _on_zoom_btn(self):
         self._zoom_mode = True
