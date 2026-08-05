@@ -11,5 +11,13 @@ calib_*.json
 # Machine-local files: real but personal to one machine, so not shared.
 BBL/demo_ioc.py
 beamview/windows_batch/beamview_home.bat
+linearity_test.py
+
+# Reference material and scratch output, deliberately not in the repo.
+# matlab_code/ is the original MATLAB source, kept alongside for reference
+# while the scan scripts are ported (see CLAUDE.md).
+matlab_code/
+example_matlab_gui.png
+linearity_test.png
 .ipynb_checkpoints/
 *.gdf
