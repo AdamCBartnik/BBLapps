@@ -1696,6 +1696,12 @@ class MainWindow(QMainWindow):
             mxx, myy, _ = self._get_display_xy(img.shape[0], img.shape[1])
             img = self._apply_sw_roi(img, mxx, myy)
 
+        # NxN window — treated as another ROI, so it lands with the rest of
+        # them and everything downstream (percent threshold, the displayed
+        # image, and every analysis number) describes the same region.
+        if self._nn_chk.isChecked():
+            img = self._apply_nn_window(img)
+
         # Threshold, Percent type — after the software ROI (MATLAB order:
         # the cutoff is a percentage of the max INSIDE the ROI, so a bright
         # artifact outside the ROI can't raise it and wipe out the beam)
@@ -2126,6 +2132,51 @@ class MainWindow(QMainWindow):
             return self._points_in_poly(X, Y, vx, vy)
         return np.zeros(X.shape, dtype=bool)
 
+    def _apply_nn_window(self, img: np.ndarray) -> np.ndarray:
+        """Keep only the brightest NxN box; zero everything else.
+
+        Finds the window with the largest sum and masks the frame to it, the
+        same way the software ROI masks (data outside -> 0) rather than
+        cropping -- cropping would shift the pixel coordinates and move the
+        reported centroid.
+
+        A uniform-window sum is a box filter, which separates into two
+        running sums: O(1) per pixel in the window size.  By FFT it costs
+        ~26 ms on a 1400x1000 frame no matter how big the window is, against
+        ~3 ms here.  scipy is the fallback when opencv isn't importable.
+
+        cv2 takes ksize as (width, height) = (cols, rows), while
+        np.ones((nx, ny)) is nx ROWS by ny COLS -- hence (ncol, nrow) below.
+        That numpy shape means the x spinbox drives the VERTICAL extent,
+        which looks like an x/y swap in the original; preserved deliberately
+        rather than quietly corrected, since it only shows for a non-square
+        window.
+        """
+        h, w = img.shape
+        nrow = int(np.clip(self._nn_x_spin.value(), 1, h))
+        ncol = int(np.clip(self._nn_y_spin.value(), 1, w))
+
+        d = img.astype(np.float64)
+        try:
+            import cv2
+            sums = cv2.boxFilter(d, -1, (ncol, nrow), normalize=False,
+                                 borderType=cv2.BORDER_CONSTANT)
+        except ImportError:
+            from scipy.signal import fftconvolve
+            sums = fftconvolve(d, np.ones((nrow, ncol)), mode="same")
+
+        r, c = np.unravel_index(int(np.argmax(sums)), sums.shape)
+        # Both back-ends anchor the window at ksize//2; clamp so the box stays
+        # wholly inside the frame (a box hanging off the edge would only be
+        # padding anyway, and this keeps the reported sum equal to the sum of
+        # what's actually displayed).
+        r0 = int(np.clip(r - nrow // 2, 0, max(0, h - nrow)))
+        c0 = int(np.clip(c - ncol // 2, 0, max(0, w - ncol)))
+
+        out = np.zeros_like(img)
+        out[r0:r0 + nrow, c0:c0 + ncol] = img[r0:r0 + nrow, c0:c0 + ncol]
+        return out
+
     def _apply_sgauss(self, img: np.ndarray, mean_param: int, p: float) -> np.ndarray:
         """Super-gaussian smoothing kernel, matching MATLAB source/make_plot.m."""
         import math
@@ -2187,34 +2238,11 @@ class MainWindow(QMainWindow):
             "background-color: red;" if pct > 95 else ""
         )
 
-        # NxN integrated intensity: max sum over all NxN sliding windows
-        if self._nn_chk.isChecked():
-            nx, ny = self._nn_x_spin.value(), self._nn_y_spin.value()
-            # A uniform-window SUM is a box filter, which separates into two
-            # running sums -- O(1) per pixel in the window size.  Doing it by
-            # FFT costs ~26 ms on a 1400x1000 frame regardless of window,
-            # against ~3 ms here (9-10x, and numerically identical: the
-            # measured relative error is 0 to 1e-7).  Same lesson as the
-            # median filter.
-            #   normalize=False  -> a sum, not a mean
-            #   BORDER_CONSTANT  -> zero padding, matching fftconvolve 'same'
-            # cv2 takes ksize as (width, height) = (cols, rows), while
-            # np.ones((nx, ny)) is nx ROWS by ny COLS -- so (ny, nx) here
-            # reproduces the existing behaviour exactly.  (That numpy shape
-            # looks like an x/y swap, but it only shows up for a non-square
-            # window; preserved rather than silently changed.)
-            try:
-                import cv2
-                sums = cv2.boxFilter(d, -1, (ny, nx), normalize=False,
-                                     borderType=cv2.BORDER_CONSTANT)
-            except ImportError:
-                from scipy.signal import fftconvolve
-                sums = fftconvolve(d, np.ones((nx, ny)), mode='same')
-            total = float(sums.max())
-        else:
-            total = total_full
-
-        self._lbl_sum.setText(f"{total:.0f}")
+        # NxN no longer needs a special case here: when it's on, the frame has
+        # already been masked to the best window (see _apply_nn_window), so
+        # the plain full-frame sum IS the NxN sum -- and unlike before, the
+        # centroid, widths and peak describe that same window too.
+        self._lbl_sum.setText(f"{total_full:.0f}")
 
         if total_full == 0:
             return
