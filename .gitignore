@@ -8,6 +8,8 @@ build/
 .eggs/
 calib_*.json
 .calib_*.json
+# Machine-local files: real but personal to one machine, so not shared.
 BBL/demo_ioc.py
+beamview/windows_batch/beamview_home.bat
 .ipynb_checkpoints/
 *.gdf
