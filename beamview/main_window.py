@@ -1096,9 +1096,29 @@ class MainWindow(QMainWindow):
         self._on_roi_apply()
 
     def _trigger_redraw(self, *_):
-        """If the camera is off, immediately redraw with current settings.
-        If it's running, the next timer tick will pick up the change naturally."""
-        if not self._timer.isActive():
+        """A setting changed: re-render the frame we already have.
+
+        Only does anything when the camera is off — while it's running the
+        next timer tick picks the change up naturally.
+
+        This RE-PROCESSES _last_raw rather than calling _update_frame(),
+        which captures.  Changing a display setting should never go and
+        fetch new data: with the camera off, clicking e.g. Set Range used
+        to pull a fresh frame off the IOC and a different image would
+        appear, seemingly from nowhere.  (It looked like a one-off because
+        the second click showed the same thing — with acquisition stopped
+        the IOC keeps serving that same last frame.)
+
+        Falls back to a capture only when there is nothing to re-render,
+        so turning the camera off before any frame has arrived still
+        produces an image.  The Redraw button keeps calling _update_frame
+        deliberately: grabbing a frame on demand is the point of it.
+        """
+        if self._timer.isActive():
+            return
+        if getattr(self, "_last_raw", None) is not None:
+            self._process_and_display(self._last_raw)
+        else:
             self._update_frame()
 
     def _set_window_title(self):
