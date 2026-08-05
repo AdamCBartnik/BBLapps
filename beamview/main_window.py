@@ -2274,7 +2274,7 @@ class MainWindow(QMainWindow):
             self._caput_nonan("centroid_y", cy)
             self._caput_nonan("rms_x", sx)
             self._caput_nonan("rms_y", sy)
-            self._caput_nonan("total_intensity", total)
+            self._caput_nonan("total_intensity", total_full)
             self._caput_nonan("peak_intensity", peak)
 
         # Long term buffer
