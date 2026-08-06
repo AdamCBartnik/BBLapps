@@ -186,12 +186,16 @@ class MainWindow(QMainWindow):
     def _build_ui(self):
         root_widget = QWidget()
         self.setCentralWidget(root_widget)
-        root = QVBoxLayout(root_widget)
+        # Two full-height columns: the image with its tool strip underneath,
+        # and the right-hand panel beside them.  The strip therefore ends
+        # where the image ends instead of running the whole window width,
+        # and the right panel reaches the bottom.
+        root = QHBoxLayout(root_widget)
         root.setContentsMargins(4, 4, 4, 4)
         root.setSpacing(4)
 
-        # ── Top section: image + right panel ──────────────────────────
-        top = QHBoxLayout()
+        # ── Left column: image above the bottom tool strip ─────────────
+        top = QVBoxLayout()
         top.setSpacing(4)
         root.addLayout(top, stretch=1)
 
@@ -255,7 +259,7 @@ class MainWindow(QMainWindow):
         self._right_layout.setSpacing(4)
         self._right_layout.setContentsMargins(2, 2, 2, 2)
         right_scroll.setWidget(right_widget)
-        top.addWidget(right_scroll)
+        root.addWidget(right_scroll)     # beside both, so it runs full height
 
         self._build_camera_enable_group()
         self._build_snapshot_group()
@@ -263,17 +267,21 @@ class MainWindow(QMainWindow):
         self._build_range_group()
         self._build_analysis_group()
         self._build_longterm_group()
+        # Software ROI lives in the right column now: it's the tallest of the
+        # tool groups and this is the only one with room to grow. NxN moved
+        # into it too -- it selects a region for the analysis to work on, so
+        # it belongs with the other ROIs rather than in Analysis.
+        self._build_sw_roi_group()
         self._right_layout.addStretch()
 
-        # ── Bottom strip ───────────────────────────────────────────────
+        # ── Bottom strip, under the image only ─────────────────────────
         bottom = QHBoxLayout()
         bottom.setSpacing(4)
-        root.addLayout(bottom)
+        top.addLayout(bottom)
 
         self._build_camera_info_group(bottom)
         self._build_data_processing_group(bottom)
         self._build_roi_group(bottom)
-        self._build_sw_roi_group(bottom)
         bottom.addStretch()
 
     # ------------------------------------------------------------------
@@ -435,29 +443,8 @@ class MainWindow(QMainWindow):
 
         lay.addLayout(grid)
 
-        nn_row = QHBoxLayout()
-        self._nn_chk = QCheckBox("NxN:")
-        self._nn_chk.toggled.connect(self._trigger_redraw)
-        # 50x50 suits the cameras in use far better than 5x5; the boxes are
-        # widened to fit three digits plus the spin arrows.
-        self._nn_x_spin = QSpinBox()
-        self._nn_x_spin.setRange(1, 500)
-        self._nn_x_spin.setValue(50)
-        self._nn_x_spin.setFixedWidth(60)
-        self._nn_x_spin.editingFinished.connect(self._trigger_redraw)
-        self._nn_x_spin.valueChanged.connect(self._trigger_redraw)
-        self._nn_y_spin = QSpinBox()
-        self._nn_y_spin.setRange(1, 500)
-        self._nn_y_spin.setValue(50)
-        self._nn_y_spin.setFixedWidth(60)
-        self._nn_y_spin.editingFinished.connect(self._trigger_redraw)
-        self._nn_y_spin.valueChanged.connect(self._trigger_redraw)
-        nn_row.addWidget(self._nn_chk)
-        nn_row.addWidget(self._nn_x_spin)
-        nn_row.addWidget(QLabel("×"))
-        nn_row.addWidget(self._nn_y_spin)
-        nn_row.addStretch()
-        lay.addLayout(nn_row)
+        # (NxN moved to the Software ROI group -- it selects a region for the
+        # analysis rather than being an analysis readout.)
 
         epics_row = QHBoxLayout()
         # MATLAB's single_frame_enable_checkbox: when off, only peak and
@@ -684,7 +671,11 @@ class MainWindow(QMainWindow):
         self._sgauss_width_spin.valueChanged.connect(self._trigger_redraw)
         self._sgauss_power_spin = QDoubleSpinBox()
         self._sgauss_power_spin.setRange(0.1, 10.0)
-        self._sgauss_power_spin.setValue(2.0)
+        # p is an exponent ON the gaussian argument: exp(-(r^2/2sig^2)^p).
+        # So p=1 IS a plain gaussian (and the gamma correction collapses to
+        # 1, giving sig_super == sig); p=2 is a 4th-order flat-top. MATLAB's
+        # superpower_edit ships '1', so 2.0 here was a port divergence.
+        self._sgauss_power_spin.setValue(1.0)
         self._sgauss_power_spin.setSingleStep(0.1)
         self._sgauss_power_spin.setDecimals(2)
         self._sgauss_power_spin.setFixedWidth(90)
@@ -741,6 +732,20 @@ class MainWindow(QMainWindow):
     def _build_roi_group(self, parent):
         lay = self._bottom_group("Hardware Region of Interest (ROI)", parent)
 
+        # Reset and Zoom sit in their own right-justified row above the
+        # spinboxes rather than in a fifth grid column, which is what let the
+        # group narrow to roughly the width of the entries themselves.
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        self._roi_reset_btn = QPushButton("Reset")
+        self._roi_reset_btn.setFixedWidth(50)
+        self._roi_reset_btn.clicked.connect(self._on_roi_reset)
+        btn_row.addWidget(self._roi_reset_btn)
+        self._zoom_btn = QPushButton("Zoom")
+        self._zoom_btn.setFixedWidth(50)
+        self._zoom_btn.clicked.connect(self._on_zoom_btn)
+        btn_row.addWidget(self._zoom_btn)
+        lay.addLayout(btn_row)
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(4)
@@ -768,11 +773,6 @@ class MainWindow(QMainWindow):
         self._roi_x_max.editingFinished.connect(self._on_roi_apply)
         grid.addWidget(self._roi_x_max, 0, 3)
 
-        self._roi_reset_btn = QPushButton("Reset")
-        self._roi_reset_btn.setFixedWidth(50)
-        self._roi_reset_btn.clicked.connect(self._on_roi_reset)
-        grid.addWidget(self._roi_reset_btn, 0, 4)
-
         lbl_v = QLabel("Vertical:")
         lbl_v.setFixedWidth(_LBL_W)
         lbl_v.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -792,15 +792,38 @@ class MainWindow(QMainWindow):
         self._roi_y_max.editingFinished.connect(self._on_roi_apply)
         grid.addWidget(self._roi_y_max, 1, 3)
 
-        self._zoom_btn = QPushButton("Zoom")
-        self._zoom_btn.setFixedWidth(50)
-        self._zoom_btn.clicked.connect(self._on_zoom_btn)
-        grid.addWidget(self._zoom_btn, 1, 4)
-
+        grid.setColumnStretch(4, 1)   # keep the entries left-packed
         lay.addLayout(grid)
 
-    def _build_sw_roi_group(self, parent):
-        lay = self._bottom_group("Software ROI", parent)
+    def _build_sw_roi_group(self):
+        lay = self._right_group("Software ROI")
+
+        # NxN first: it's the simplest region selector, and it applies to
+        # whatever survives the shape masks below (see _apply_nn_window,
+        # which runs right after them).
+        nn_row = QHBoxLayout()
+        self._nn_chk = QCheckBox("NxN:")
+        self._nn_chk.toggled.connect(self._trigger_redraw)
+        # 50x50 suits the cameras in use far better than 5x5; the boxes are
+        # widened to fit three digits plus the spin arrows.
+        self._nn_x_spin = QSpinBox()
+        self._nn_x_spin.setRange(1, 500)
+        self._nn_x_spin.setValue(50)
+        self._nn_x_spin.setFixedWidth(60)
+        self._nn_x_spin.editingFinished.connect(self._trigger_redraw)
+        self._nn_x_spin.valueChanged.connect(self._trigger_redraw)
+        self._nn_y_spin = QSpinBox()
+        self._nn_y_spin.setRange(1, 500)
+        self._nn_y_spin.setValue(50)
+        self._nn_y_spin.setFixedWidth(60)
+        self._nn_y_spin.editingFinished.connect(self._trigger_redraw)
+        self._nn_y_spin.valueChanged.connect(self._trigger_redraw)
+        nn_row.addWidget(self._nn_chk)
+        nn_row.addWidget(self._nn_x_spin)
+        nn_row.addWidget(QLabel("×"))
+        nn_row.addWidget(self._nn_y_spin)
+        nn_row.addStretch()
+        lay.addLayout(nn_row)
 
         # Row 1: Enable / Show / Invert
         row1 = QHBoxLayout()
@@ -841,7 +864,7 @@ class MainWindow(QMainWindow):
 
         # Row 3: the list of ROIs (only the selected one is shown/editable)
         self._sw_roi_list = QListWidget()
-        self._sw_roi_list.setFixedHeight(70)
+        self._sw_roi_list.setFixedHeight(130)   # taller now it's in the full-height column
         self._sw_roi_list.currentRowChanged.connect(self._on_sw_roi_list_select)
         lay.addWidget(self._sw_roi_list)
 
