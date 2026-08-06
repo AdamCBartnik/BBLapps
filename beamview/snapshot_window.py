@@ -23,7 +23,7 @@ import pyqtgraph as pg
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QLineEdit, QSizePolicy,
+    QPushButton, QLabel, QFileDialog, QSizePolicy,
 )
 
 from .coords import nearest_index
@@ -153,17 +153,17 @@ class SnapshotWindow(QMainWindow):
 
         vlay.addWidget(self._gfx)
 
-        # ── Bottom bar: status | Prefix: [____] [Save] ───────────────
+        # ── Bottom bar: status | [Save...] ───────────────────────────
+        # Save opens a file dialog rather than composing a name from a
+        # prefix box: the dialog already knows how to browse, confirm an
+        # overwrite and remember nothing we'd have to re-implement. The
+        # name it opens with is the one the prefix box used to produce, so
+        # the common case is still Save then Enter.
         bot = QHBoxLayout()
         self._status_lbl = QLabel("")
         bot.addWidget(self._status_lbl, stretch=1)
-        bot.addWidget(QLabel("Prefix:"))
-        self._prefix_edit = QLineEdit("ssss")
-        self._prefix_edit.setFixedWidth(80)
-        self._prefix_edit.textChanged.connect(self._on_prefix_changed)
-        bot.addWidget(self._prefix_edit)
-        self._save_btn = QPushButton("Save")
-        self._save_btn.setFixedWidth(55)
+        self._save_btn = QPushButton("Save...")
+        self._save_btn.setFixedWidth(70)
         self._save_btn.clicked.connect(self._on_save)
         bot.addWidget(self._save_btn)
         vlay.addLayout(bot)
@@ -265,43 +265,47 @@ class SnapshotWindow(QMainWindow):
     # Save
     # ------------------------------------------------------------------
 
-    def _on_prefix_changed(self):
-        """Re-enable Save whenever the prefix is edited after a successful save."""
-        self._save_btn.setEnabled(True)
-        self._status_lbl.setText("")
+    def _default_save_stem(self):
+        """Where the Save dialog should open, and under what name.
+
+        Today's data directory, falling back to the current directory when
+        it doesn't exist -- at home, or before the on-site cron job has run,
+        that path is simply absent and a dialog that opens nowhere is worse
+        than one that opens here.
+
+        The name is what BBL.ssss() would pick for prefix "beamview", i.e.
+        beamview.png, then beamview_2.png -- so the offered name is free.
+        """
+        try:
+            d = get_todays_directory()
+            if not d.exists():
+                d = Path.cwd()
+        except Exception:
+            d = Path.cwd()
+        return next_ssss_stem(d, prefix="beamview")
 
     def _on_save(self):
-        prefix = self._prefix_edit.text().strip() or "ssss"
+        stem = self._default_save_stem()
 
-        try:
-            today_dir = get_todays_directory()
-        except Exception as e:
-            self._status_lbl.setText(f"Save failed: {e}")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save snapshot (writes .png and .h5)",
+            str(stem.with_suffix(".png")), "PNG image (*.png)")
+        if not path:
+            self._status_lbl.setText("")
             return
 
-        if not today_dir.exists():
-            self._status_lbl.setText(
-                f"Directory not found: {today_dir}  (cron job creates it on-site)"
-            )
-            return
-
-        # reserve= atomically creates empty placeholders for both files, so a
-        # concurrent saver (another beamview, or BBL.ssss from a notebook)
-        # scanning at the same moment can't pick this same number and
-        # silently overwrite us.
-        exts = (".png", ".h5")
-        stem = next_ssss_stem(today_dir, prefix=prefix, reserve=exts)
+        # The dialog names the PNG; the .h5 goes beside it under the same
+        # stem. No placeholder reservation here -- the user has named the
+        # files explicitly and the dialog already asked about overwriting,
+        # so racing another saver isn't the hazard it is for an
+        # auto-numbered name.
+        stem = Path(path)
+        if stem.suffix.lower() == ".png":
+            stem = stem.with_suffix("")
 
         def _drop_reservation():
-            """Release any placeholder still empty, so a failed save doesn't
-            permanently burn a number."""
-            for e in exts:
-                p = stem.with_suffix(e)
-                try:
-                    if p.exists() and p.stat().st_size == 0:
-                        p.unlink()
-                except OSError:
-                    pass
+            """Nothing reserved when the name came from the dialog."""
+            return
 
         # ── PNG: grab the plot area as rendered (image + axes + colorbar,
         #    not the surrounding GUI controls) ──────────────────────────
@@ -350,4 +354,6 @@ class SnapshotWindow(QMainWindow):
 
         name = stem.name
         self._status_lbl.setText(f"Saved: {name}.png + {name}.h5")
-        self._save_btn.setEnabled(False)   # prevent accidental double-save
+        # Save stays enabled: the old prefix box was what re-enabled it, and
+        # a second save is no longer a hazard -- the dialog offers the next
+        # free name and confirms any overwrite itself.
