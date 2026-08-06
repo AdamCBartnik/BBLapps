@@ -808,10 +808,10 @@ class MainWindow(QMainWindow):
         # it had two numbers. The spinboxes are WIDTH then HEIGHT, matching
         # the "w × h" reading order; naming them _w/_h rather than _x/_y is
         # deliberate, since x/y is what let them get silently transposed.
-        # Checkbox and size on separate rows: the right column is a fixed
-        # 320 px with the horizontal scrollbar off, so anything too wide
-        # clips silently rather than scrolling. Two rows costs a little
-        # height (which this column now has) and can't overflow.
+        # One row, and kept lean on purpose: the right column is a fixed
+        # 320 px with the horizontal scrollbar off, so an over-wide row
+        # clips silently instead of scrolling. Hence no "size:" or "px"
+        # label -- the tooltips carry the units.
         box_row = QHBoxLayout()
         self._box_chk = QCheckBox("Brightest box")
         self._box_chk.setToolTip(
@@ -819,12 +819,6 @@ class MainWindow(QMainWindow):
             "describes that box")
         self._box_chk.toggled.connect(self._trigger_redraw)
         box_row.addWidget(self._box_chk)
-        box_row.addStretch()
-        lay.addLayout(box_row)
-
-        box_row = QHBoxLayout()
-        box_row.addSpacing(18)          # indent under the checkbox
-        box_row.addWidget(QLabel("size:"))
         # 50x50 suits the cameras in use far better than the old 5x5; the
         # boxes are wide enough for three digits plus the spin arrows.
         self._box_w_spin = QSpinBox()
@@ -844,7 +838,6 @@ class MainWindow(QMainWindow):
         box_row.addWidget(self._box_w_spin)
         box_row.addWidget(QLabel("×"))
         box_row.addWidget(self._box_h_spin)
-        box_row.addWidget(QLabel("px"))
         box_row.addStretch()
         lay.addLayout(box_row)
 
