@@ -6,6 +6,9 @@ set "CONDA=C:\Users\bbcr_opr\AppData\Local\miniforge3"
 set "REPO=C:\Users\bbcr_opr\BBLapps"
 set "DEFAULT=xlight.yaml"
 REM   ^ Enter picks this one. Blank it out ("") to make Enter quit instead.
+set "DEBUG=0"
+REM   ^ 1 = keep this console open and show beamview's output (use when
+REM     something won't start). 0 = window closes as soon as you've picked.
 REM ------------------------------------------------------------------------
 
 set "CFGDIR=%REPO%\beamview\configs"
@@ -77,12 +80,31 @@ set "CONFIG=%DEFAULT%"
 :launch
 call "%CONDA%\Scripts\activate.bat" "%CONDA%"
 cd /d "%REPO%"
+
+REM Hand off to the console-less interpreter and exit straight away, so this
+REM window disappears as soon as a config is picked. pythonw.exe ships beside
+REM python.exe in every CPython/conda install; fall back if it's ever absent.
+REM
+REM The catch: pythonw has nowhere to print, so a crash on startup is
+REM SILENT. Set DEBUG=1 at the top to run the normal console interpreter
+REM instead and keep the window -- that's the version to use when something
+REM isn't working.
+if "%DEBUG%"=="1" goto :launch_debug
+
+set "PYW=%CONDA%\pythonw.exe"
+if not exist "%PYW%" set "PYW=pythonw"
+start "" "%PYW%" -m beamview.main --config configs/%CONFIG%
+exit /b 0
+
+:launch_debug
 echo.
-echo   Starting beamview  (%CONFIG%)
+echo   Starting beamview  (%CONFIG%)   [DEBUG: console kept open]
 echo.
 python -m beamview.main --config configs/%CONFIG%
 
+REM Only reached on an error, or in DEBUG -- so the pause stays. Without it
+REM a bad path or a bad config number would flash past unreadably.
 :end
 echo.
-echo   Closed. Press any key.
+echo   Press any key to close.
 pause >nul
