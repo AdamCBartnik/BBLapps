@@ -268,9 +268,9 @@ class MainWindow(QMainWindow):
         self._build_analysis_group()
         self._build_longterm_group()
         # Software ROI lives in the right column now: it's the tallest of the
-        # tool groups and this is the only one with room to grow. NxN moved
-        # into it too -- it selects a region for the analysis to work on, so
-        # it belongs with the other ROIs rather than in Analysis.
+        # tool groups and this is the only one with room to grow. The
+        # brightest-box selector moved into it too -- it picks a region for
+        # the analysis, so it belongs with the other ROIs, not in Analysis.
         self._build_sw_roi_group()
         self._right_layout.addStretch()
 
@@ -443,8 +443,8 @@ class MainWindow(QMainWindow):
 
         lay.addLayout(grid)
 
-        # (NxN moved to the Software ROI group -- it selects a region for the
-        # analysis rather than being an analysis readout.)
+        # (The brightest-box selector moved to the Software ROI group -- it
+        # selects a region rather than being an analysis readout.)
 
         epics_row = QHBoxLayout()
         # MATLAB's single_frame_enable_checkbox: when off, only peak and
@@ -794,36 +794,59 @@ class MainWindow(QMainWindow):
 
         grid.setColumnStretch(4, 1)   # keep the entries left-packed
         lay.addLayout(grid)
+        lay.addStretch()              # and top-packed, rather than spread out
 
     def _build_sw_roi_group(self):
         lay = self._right_group("Software ROI")
 
-        # NxN first: it's the simplest region selector, and it applies to
-        # whatever survives the shape masks below (see _apply_nn_window,
-        # which runs right after them).
-        nn_row = QHBoxLayout()
-        self._nn_chk = QCheckBox("NxN:")
-        self._nn_chk.toggled.connect(self._trigger_redraw)
-        # 50x50 suits the cameras in use far better than 5x5; the boxes are
-        # widened to fit three digits plus the spin arrows.
-        self._nn_x_spin = QSpinBox()
-        self._nn_x_spin.setRange(1, 500)
-        self._nn_x_spin.setValue(50)
-        self._nn_x_spin.setFixedWidth(60)
-        self._nn_x_spin.editingFinished.connect(self._trigger_redraw)
-        self._nn_x_spin.valueChanged.connect(self._trigger_redraw)
-        self._nn_y_spin = QSpinBox()
-        self._nn_y_spin.setRange(1, 500)
-        self._nn_y_spin.setValue(50)
-        self._nn_y_spin.setFixedWidth(60)
-        self._nn_y_spin.editingFinished.connect(self._trigger_redraw)
-        self._nn_y_spin.valueChanged.connect(self._trigger_redraw)
-        nn_row.addWidget(self._nn_chk)
-        nn_row.addWidget(self._nn_x_spin)
-        nn_row.addWidget(QLabel("×"))
-        nn_row.addWidget(self._nn_y_spin)
-        nn_row.addStretch()
-        lay.addLayout(nn_row)
+        # "Brightest box" first: the simplest region selector, and it applies
+        # to whatever survives the shape masks below (see
+        # _apply_brightest_box, which runs right after them).
+        #
+        # Named for what it does -- find the brightest box of this size and
+        # keep only that -- rather than the old "NxN", which said only that
+        # it had two numbers. The spinboxes are WIDTH then HEIGHT, matching
+        # the "w × h" reading order; naming them _w/_h rather than _x/_y is
+        # deliberate, since x/y is what let them get silently transposed.
+        # Checkbox and size on separate rows: the right column is a fixed
+        # 320 px with the horizontal scrollbar off, so anything too wide
+        # clips silently rather than scrolling. Two rows costs a little
+        # height (which this column now has) and can't overflow.
+        box_row = QHBoxLayout()
+        self._box_chk = QCheckBox("Brightest box")
+        self._box_chk.setToolTip(
+            "Keep only the brightest box of this size; all analysis then "
+            "describes that box")
+        self._box_chk.toggled.connect(self._trigger_redraw)
+        box_row.addWidget(self._box_chk)
+        box_row.addStretch()
+        lay.addLayout(box_row)
+
+        box_row = QHBoxLayout()
+        box_row.addSpacing(18)          # indent under the checkbox
+        box_row.addWidget(QLabel("size:"))
+        # 50x50 suits the cameras in use far better than the old 5x5; the
+        # boxes are wide enough for three digits plus the spin arrows.
+        self._box_w_spin = QSpinBox()
+        self._box_w_spin.setRange(1, 500)
+        self._box_w_spin.setValue(50)
+        self._box_w_spin.setFixedWidth(60)
+        self._box_w_spin.setToolTip("Box width in pixels (horizontal)")
+        self._box_w_spin.editingFinished.connect(self._trigger_redraw)
+        self._box_w_spin.valueChanged.connect(self._trigger_redraw)
+        self._box_h_spin = QSpinBox()
+        self._box_h_spin.setRange(1, 500)
+        self._box_h_spin.setValue(50)
+        self._box_h_spin.setFixedWidth(60)
+        self._box_h_spin.setToolTip("Box height in pixels (vertical)")
+        self._box_h_spin.editingFinished.connect(self._trigger_redraw)
+        self._box_h_spin.valueChanged.connect(self._trigger_redraw)
+        box_row.addWidget(self._box_w_spin)
+        box_row.addWidget(QLabel("×"))
+        box_row.addWidget(self._box_h_spin)
+        box_row.addWidget(QLabel("px"))
+        box_row.addStretch()
+        lay.addLayout(box_row)
 
         # Row 1: Enable / Show / Invert
         row1 = QHBoxLayout()
@@ -1719,11 +1742,11 @@ class MainWindow(QMainWindow):
             mxx, myy, _ = self._get_display_xy(img.shape[0], img.shape[1])
             img = self._apply_sw_roi(img, mxx, myy)
 
-        # NxN window — treated as another ROI, so it lands with the rest of
-        # them and everything downstream (percent threshold, the displayed
+        # Brightest box — treated as another ROI, so it lands with the rest
+        # of them and everything downstream (percent threshold, the displayed
         # image, and every analysis number) describes the same region.
-        if self._nn_chk.isChecked():
-            img = self._apply_nn_window(img)
+        if self._box_chk.isChecked():
+            img = self._apply_brightest_box(img)
 
         # Threshold, Percent type — after the software ROI (MATLAB order:
         # the cutoff is a percentage of the max INSIDE the ROI, so a bright
@@ -2155,10 +2178,10 @@ class MainWindow(QMainWindow):
             return self._points_in_poly(X, Y, vx, vy)
         return np.zeros(X.shape, dtype=bool)
 
-    def _apply_nn_window(self, img: np.ndarray) -> np.ndarray:
-        """Keep only the brightest NxN box; zero everything else.
+    def _apply_brightest_box(self, img: np.ndarray) -> np.ndarray:
+        """Keep only the brightest w x h box; zero everything else.
 
-        Finds the window with the largest sum and masks the frame to it, the
+        Finds the box with the largest sum and masks the frame to it, the
         same way the software ROI masks (data outside -> 0) rather than
         cropping -- cropping would shift the pixel coordinates and move the
         reported centroid.
@@ -2168,16 +2191,14 @@ class MainWindow(QMainWindow):
         ~26 ms on a 1400x1000 frame no matter how big the window is, against
         ~3 ms here.  scipy is the fallback when opencv isn't importable.
 
-        cv2 takes ksize as (width, height) = (cols, rows), while
-        np.ones((nx, ny)) is nx ROWS by ny COLS -- hence (ncol, nrow) below.
-        That numpy shape means the x spinbox drives the VERTICAL extent,
-        which looks like an x/y swap in the original; preserved deliberately
-        rather than quietly corrected, since it only shows for a non-square
-        window.
+        WIDTH is horizontal (columns), HEIGHT is vertical (rows).  Before
+        2026-08 the two spinboxes were transposed -- the "x" box drove the
+        vertical extent, because np.ones((nx, ny)) makes nx ROWS -- which
+        went unnoticed for as long as the box stayed square.
         """
         h, w = img.shape
-        nrow = int(np.clip(self._nn_x_spin.value(), 1, h))
-        ncol = int(np.clip(self._nn_y_spin.value(), 1, w))
+        ncol = int(np.clip(self._box_w_spin.value(), 1, w))   # width  -> columns
+        nrow = int(np.clip(self._box_h_spin.value(), 1, h))   # height -> rows
 
         d = img.astype(np.float64)
         try:
@@ -2261,9 +2282,9 @@ class MainWindow(QMainWindow):
             "background-color: red;" if pct > 95 else ""
         )
 
-        # NxN no longer needs a special case here: when it's on, the frame has
-        # already been masked to the best window (see _apply_nn_window), so
-        # the plain full-frame sum IS the NxN sum -- and unlike before, the
+        # The brightest-box selector needs no special case here: when it's on
+        # the frame is already masked to that box (see _apply_brightest_box),
+        # so the plain full-frame sum IS the box sum -- and unlike before, the
         # centroid, widths and peak describe that same window too.
         self._lbl_sum.setText(f"{total_full:.0f}")
 

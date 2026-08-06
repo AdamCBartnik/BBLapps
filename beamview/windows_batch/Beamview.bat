@@ -78,7 +78,12 @@ if not defined DEFAULT goto :end
 set "CONFIG=%DEFAULT%"
 
 :launch
-call "%CONDA%\Scripts\activate.bat" "%CONDA%"
+REM Try conda's own activation, but don't depend on it: on a machine where
+REM the shell was never initialised for cmd.exe it prints "libmamba Shell
+REM not initialized" and does nothing. Prepending the directories activate
+REM would have added is enough for beamview, and works either way.
+call "%CONDA%\Scripts\activate.bat" "%CONDA%" 2>nul
+set "PATH=%CONDA%;%CONDA%\Library\mingw-w64\bin;%CONDA%\Library\usr\bin;%CONDA%\Library\bin;%CONDA%\Scripts;%CONDA%\bin;%PATH%"
 cd /d "%REPO%"
 
 REM Hand off to the console-less interpreter and exit straight away, so this
