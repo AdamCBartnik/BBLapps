@@ -1,5 +1,8 @@
+import math
 import time
 from datetime import datetime
+from functools import partial
+
 import numpy as np
 import pyqtgraph as pg
 
@@ -37,6 +40,38 @@ EPICS_PREFIXES = [
 # 128x128 camera are allowed (float32 buffer ≈ 655 MB). The per-shape frame
 # cap is derived from this and rounded to the nearest 100 when >= 100.
 FRAME_AVG_PX_BUDGET = 10_000 * 128 * 128
+
+
+# ── Software-ROI entry types ───────────────────────────────────────────────
+# Two families, and every type must join exactly one of them:
+#
+#   MASK    changes the DATA -- contributes to the union that zeroes pixels.
+#           Its effect is on the numbers, so it still works while invisible,
+#           and only the selected one gets a draggable widget.
+#   MEASURE changes NOTHING -- it draws an annotation and reports a number.
+#           Being visible IS its entire output, so every measure entry keeps
+#           its own widget and label on the plot at all times, selected or
+#           not, and none of them touch the mask.
+#
+# Geometry is stored either as a list of vertices or as pos+size; that split
+# is orthogonal to the one above, hence a separate tuple.
+#
+# Adding a type later means: name it in the right family below, give it a
+# default in _default_geom, and build its widget in _make_widget_for_entry.
+# Nothing else branches on the type name.
+MASK_TYPES = ("Rectangle", "Circle", "Ellipse", "Polygon", "Annular Ellipse")
+MEASURE_TYPES = ("Measure: Distance", "Measure: Angle")
+POINT_TYPES = ("Polygon",) + MEASURE_TYPES      # stored as vertices, not pos+size
+
+
+def is_measure(entry_or_type) -> bool:
+    t = entry_or_type["type"] if isinstance(entry_or_type, dict) else entry_or_type
+    return t in MEASURE_TYPES
+
+
+def uses_points(entry_or_type) -> bool:
+    t = entry_or_type["type"] if isinstance(entry_or_type, dict) else entry_or_type
+    return t in POINT_TYPES
 
 
 class TrimmedDoubleSpinBox(QDoubleSpinBox):
@@ -860,9 +895,10 @@ class MainWindow(QMainWindow):
         # Row 2: type for next Add + Add / Remove / Clear
         row2 = QHBoxLayout()
         self._sw_roi_type_combo = QComboBox()
-        self._sw_roi_type_combo.addItems(
-            ["Rectangle", "Circle", "Ellipse", "Polygon", "Annular Ellipse"])
-        self._sw_roi_type_combo.setToolTip("Type created by 'Add'")
+        self._sw_roi_type_combo.addItems(list(MASK_TYPES) + list(MEASURE_TYPES))
+        self._sw_roi_type_combo.setToolTip(
+            "Type created by 'Add'. Mask shapes restrict the analysis; "
+            "Measure items only annotate and change no data.")
         row2.addWidget(self._sw_roi_type_combo)
         self._sw_roi_add_btn = QPushButton("Add")
         self._sw_roi_add_btn.setFixedWidth(42)
@@ -1814,6 +1850,9 @@ class MainWindow(QMainWindow):
 
     def _on_view_range_changed(self):
         """Re-run analysis on the visible crop whenever the user pans or zooms."""
+        # Measure labels are offset by a fraction of the view size, so their
+        # placement has to follow a zoom (the values themselves don't change).
+        self._refresh_all_measure_readouts()
         if (self._last_analysis_img is None or
                 self._last_analysis_xx is None or
                 self._last_analysis_yy is None):
@@ -1843,14 +1882,22 @@ class MainWindow(QMainWindow):
                                [cx + 0.5 * bw, cy - 0.5 * bh],
                                [cx + 0.5 * bw, cy + 0.5 * bh],
                                [cx - 0.5 * bw, cy + 0.5 * bh]]}
+        if t == "Measure: Distance":       # a horizontal segment across the view
+            return {"points": [[cx - 0.5 * bw, cy], [cx + 0.5 * bw, cy]]}
+        if t == "Measure: Angle":          # vertex in the middle, two arms
+            return {"points": [[cx - 0.5 * bw, cy],
+                               [cx, cy - 0.35 * bh],
+                               [cx + 0.5 * bw, cy]]}
         return {"pos": [cx - 0.5 * bw, cy - 0.5 * bh], "size": [bw, bh]}
 
     def _new_entry(self, t: str) -> dict:
         """Build a list entry (data-coord geometry) for a new ROI of type t."""
         g = self._default_geom(t)
         e = {"type": t, "width": float(self._sw_roi_width_spin.value()),
-             "angle": 0.0, "mask": None, "masksig": None}
-        if t == "Polygon":
+             "angle": 0.0, "mask": None, "masksig": None,
+             # measure entries own their overlay; masks leave these None
+             "item": None, "label": None}
+        if uses_points(t):
             e["points"] = [list(p) for p in g["points"]]
             e["pos"] = e["size"] = None
         else:
@@ -1871,9 +1918,130 @@ class MainWindow(QMainWindow):
             roi.addRotateHandle([1, 0], [0.5, 0.5])   # tilt about the center
             if e["angle"]:
                 roi.setAngle(e["angle"])
+        elif t == "Measure: Distance":
+            # exactly two handles, and no way to add a third
+            roi = pg.LineSegmentROI(e["points"], pen=pen)
+        elif t == "Measure: Angle":
+            # open polyline; the MIDDLE handle is the vertex (MATLAB's
+            # convention in show_roi.m)
+            roi = pg.PolyLineROI(e["points"], closed=False, pen=pen)
         else:  # Polygon
             roi = pg.PolyLineROI(e["points"], closed=True, pen=pen)
         return roi
+
+    # -- measure overlays -----------------------------------------------------
+    # Unlike masks, these are NOT tied to list selection: each measure entry
+    # keeps its own widget and text label on the plot for as long as it
+    # exists, because an invisible measurement tells you nothing. self._sw_roi
+    # therefore only ever holds a MASK widget.
+
+    def _sync_measure_items(self):
+        """Create/remove overlays so they match the current entry list."""
+        live = []
+        for e in self._sw_roi_entries:
+            if not is_measure(e):
+                continue
+            if e["item"] is None:
+                roi = self._make_widget_for_entry(e)
+                label = pg.TextItem(color="r", anchor=(0.5, 0.5))
+                self._plot.addItem(roi)
+                self._plot.addItem(label)
+                # partial keeps a strong ref to the bound method AND the
+                # entry, so the connection can't be collected out from under
+                # the signal
+                cb = partial(self._on_measure_changed, e)
+                e["item"], e["label"], e["cb"] = roi, label, cb
+                roi.sigRegionChanged.connect(cb)
+            live.append(e["item"])
+            self._refresh_measure_readout(e)
+
+        # drop overlays whose entry is gone (deleted / cleared)
+        for item in list(getattr(self, "_measure_items", [])):
+            if item not in live:
+                self._plot.removeItem(item)
+        self._measure_items = live
+        for lab in list(getattr(self, "_measure_labels", [])):
+            if lab not in [e["label"] for e in self._sw_roi_entries
+                           if is_measure(e)]:
+                self._plot.removeItem(lab)
+        self._measure_labels = [e["label"] for e in self._sw_roi_entries
+                                if is_measure(e)]
+        self._apply_measure_visibility()
+
+    def _drop_measure_overlay(self, e):
+        """Remove one entry's overlay from the plot, if it has one."""
+        if not is_measure(e) or e.get("item") is None:
+            return
+        try:
+            e["item"].sigRegionChanged.disconnect(e["cb"])
+        except Exception:
+            pass
+        self._plot.removeItem(e["item"])
+        self._plot.removeItem(e["label"])
+        e["item"] = e["label"] = e["cb"] = None
+
+    def _apply_measure_visibility(self):
+        on = self._sw_roi_show_chk.isChecked()
+        for e in self._sw_roi_entries:
+            if is_measure(e) and e["item"] is not None:
+                e["item"].setVisible(on)
+                e["label"].setVisible(on)
+
+    def _on_measure_changed(self, e, *_):
+        """A measure overlay was dragged: store the new vertices, re-read."""
+        roi = e["item"]
+        if roi is None:
+            return
+        verts = [roi.mapToParent(pg.Point(p)) for p in roi.getState()["points"]]
+        e["points"] = [[v.x(), v.y()] for v in verts]
+        self._refresh_measure_readout(e)
+
+    def _refresh_measure_readout(self, e):
+        """Recompute the number and reposition its label.
+
+        Both quantities are invariant under the x-mirror: a reflection
+        preserves distances, and the angle is the unsigned interior one, so
+        neither needs a handedness correction (see _get_display_xy).
+        """
+        label = e["label"]
+        if label is None:
+            return
+        pts = e["points"]
+        (vx0, vx1), (vy0, vy1) = self._plot.vb.viewRange()
+        win = min(abs(vx1 - vx0), abs(vy1 - vy0))   # MATLAB's window_size
+
+        if e["type"] == "Measure: Distance" and len(pts) >= 2:
+            (x0, y0), (x1, y1) = pts[0], pts[-1]
+            dx, dy = x1 - x0, y1 - y0
+            d = math.hypot(dx, dy)
+            # label offset perpendicular to the line, biased to the upper
+            # side so it doesn't sit on top of the line (MATLAB show_roi.m)
+            n = math.hypot(dy, dx) or 1.0
+            px, py = dy / n, -dx / n
+            if py < 0:
+                px, py = -px, -py
+            label.setText(f"{d:.4g}")
+            label.setPos(0.5 * (x0 + x1) + 0.05 * win * px,
+                         0.5 * (y0 + y1) + 0.05 * win * py)
+
+        elif e["type"] == "Measure: Angle" and len(pts) >= 3:
+            (x0, y0), (xv, yv), (x2, y2) = pts[0], pts[1], pts[2]
+            v1 = (x0 - xv, y0 - yv)
+            v2 = (x2 - xv, y2 - yv)
+            n1 = math.hypot(*v1) or 1.0
+            n2 = math.hypot(*v2) or 1.0
+            cos = (v1[0] * v2[0] + v1[1] * v2[1]) / (n1 * n2)
+            th = math.degrees(math.acos(max(-1.0, min(1.0, cos))))
+            bx, by = v1[0] / n1 + v2[0] / n2, v1[1] / n1 + v2[1] / n2
+            nb = math.hypot(bx, by) or 1.0
+            label.setText(f"{th:.1f}°")
+            label.setPos(xv + 0.15 * win * bx / nb,
+                         yv + 0.15 * win * by / nb)
+
+    def _refresh_all_measure_readouts(self):
+        for e in self._sw_roi_entries:
+            if is_measure(e):
+                self._refresh_measure_readout(e)
 
     def _save_live_state(self):
         """Read the live widget's geometry back into its list entry."""
@@ -1881,7 +2049,7 @@ class MainWindow(QMainWindow):
         if self._sw_roi is None or not (0 <= i < len(self._sw_roi_entries)):
             return
         roi, e = self._sw_roi, self._sw_roi_entries[i]
-        if e["type"] == "Polygon":
+        if uses_points(e):
             verts = [roi.mapToParent(pg.Point(p)) for p in roi.getState()["points"]]
             e["points"] = [[v.x(), v.y()] for v in verts]
         else:
@@ -1907,7 +2075,12 @@ class MainWindow(QMainWindow):
         n = len(self._sw_roi_entries)
         self._sw_roi_sel = i if 0 <= i < n else -1
 
-        if self._sw_roi_sel >= 0:
+        # A measure entry already has its own permanent widget, so selection
+        # doesn't create one -- it would be a second, duplicate overlay.
+        # self._sw_roi stays None, meaning "no live MASK widget".
+        if self._sw_roi_sel >= 0 and is_measure(self._sw_roi_entries[self._sw_roi_sel]):
+            self._sw_roi_width_spin.setEnabled(False)
+        elif self._sw_roi_sel >= 0:
             e = self._sw_roi_entries[self._sw_roi_sel]
             roi = self._make_widget_for_entry(e)
             self._sw_roi = roi
@@ -1944,6 +2117,7 @@ class MainWindow(QMainWindow):
             self._sw_roi_show_chk.setChecked(True)   # make the new one visible
         self._refresh_sw_roi_list()
         self._select_entry(len(self._sw_roi_entries) - 1)
+        self._sync_measure_items()
         self._on_sw_roi_changed()
 
     def _on_sw_roi_remove_selected(self):
@@ -1952,17 +2126,22 @@ class MainWindow(QMainWindow):
         if not (0 <= i < len(self._sw_roi_entries)):
             return
         self._destroy_live_widget()      # the live widget is the selected entry
+        self._drop_measure_overlay(self._sw_roi_entries[i])
         self._sw_roi_entries.pop(i)
         self._refresh_sw_roi_list()
         self._select_entry(min(i, len(self._sw_roi_entries) - 1))
+        self._sync_measure_items()
         self._on_sw_roi_changed()
 
     def _on_sw_roi_clear_all(self):
         self._destroy_live_widget()
+        for e in self._sw_roi_entries:
+            self._drop_measure_overlay(e)
         self._sw_roi_entries.clear()
         self._sw_roi_sel = -1
         self._sw_roi_width_spin.setEnabled(False)
         self._refresh_sw_roi_list()
+        self._sync_measure_items()
         self._on_sw_roi_changed()
 
     def _on_sw_roi_list_select(self, row: int):
@@ -1980,8 +2159,12 @@ class MainWindow(QMainWindow):
                 self._on_sw_roi_changed()
 
     def _on_sw_roi_show_toggle(self, on: bool):
+        # Show hides EVERYTHING drawn on the image -- the selected mask
+        # widget and every measure overlay -- so there is one way to clear
+        # the view.
         if self._sw_roi is not None:
             self._sw_roi.setVisible(on)
+        self._apply_measure_visibility()
 
     def _on_live_roi_changed(self, *_):
         """The selected widget moved: sync its entry and refresh the mask."""
@@ -2052,7 +2235,7 @@ class MainWindow(QMainWindow):
         return sz / self._axis_scale(axis, old) * self._axis_scale(axis, new)
 
     def _convert_entry_coords(self, e, old, new):
-        if e["type"] == "Polygon":
+        if uses_points(e):
             e["points"] = [[self._conv_coord(x, "x", old, new),
                             self._conv_coord(y, "y", old, new)]
                            for x, y in e["points"]]
@@ -2077,11 +2260,16 @@ class MainWindow(QMainWindow):
             return
         self._save_live_state()
         self._destroy_live_widget()
+        # Measure overlays hold the OLD coordinates in their widgets; drop
+        # them and let _sync_measure_items rebuild from the converted points.
+        for e in self._sw_roi_entries:
+            self._drop_measure_overlay(e)
         for e in self._sw_roi_entries:
             self._convert_entry_coords(e, old, new)
         self._sw_roi_coord_params = new
         if 0 <= self._sw_roi_sel < len(self._sw_roi_entries):
             self._select_entry(self._sw_roi_sel)
+        self._sync_measure_items()
         self._sw_roi_dirty = True
 
     @staticmethod
@@ -2109,7 +2297,10 @@ class MainWindow(QMainWindow):
         Invert). The union and each entry's mask are cached, recomputed only
         when geometry or display coordinates change, so per-frame cost is one
         np.where regardless of how many ROIs there are."""
-        entries = self._sw_roi_entries
+        # Measure entries annotate; they never mask. Excluded here (and so
+        # from Invert, which flips this union) -- otherwise drawing a
+        # distance line would blank the image everywhere except the line.
+        entries = [e for e in self._sw_roi_entries if not is_measure(e)]
         if not entries:
             return img
         px = self._sw_px_to_display()
