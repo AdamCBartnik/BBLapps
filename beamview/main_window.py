@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QLabel, QDoubleSpinBox, QSpinBox,
     QComboBox, QCheckBox, QGroupBox, QSizePolicy,
     QScrollArea, QLineEdit, QFrame, QRubberBand, QGridLayout,
-    QListWidget,
+    QListWidget, QApplication,
 )
 from PyQt5.QtCore import QTimer, Qt, QThread, QObject, pyqtSignal, QRect, QSize, QEvent
 from PyQt5.QtGui import QFont
@@ -141,9 +141,8 @@ class MainWindow(QMainWindow):
         self._to_epics_default = bool(to_epics_default)
         self.camera = camera
         self._set_window_title()
-        # Height a touch taller than the content needs: on Linux (different
-        # default fonts) the right-side controls were clipped, forcing a
-        # scrollbar that hid data. The extra ~20 px absorbs that.
+        # Initial size; the height is refined in _size_to_content() once the
+        # widgets exist and can say how much room they actually want.
         self.resize(1175, 920)
 
         # Worker thread for blocking camera captures
@@ -191,6 +190,7 @@ class MainWindow(QMainWindow):
         self._last_gain_written = None
 
         self._build_ui()
+        self._size_to_content()
         self._update_frame_type_capability()
         self._refresh_camera_settings()
         self._apply_colormap()
@@ -1195,6 +1195,31 @@ class MainWindow(QMainWindow):
             self._process_and_display(self._last_raw)
         else:
             self._update_frame()
+
+    def _size_to_content(self):
+        """Open tall enough that the right column doesn't need to scroll.
+
+        How much height that column wants is NOT a fixed number -- it scales
+        with the font, so a display at 125% scaling, or Linux with different
+        default fonts, needs materially more than one at 100%. A hardcoded
+        height is therefore right on one machine and wrong on the next,
+        which is exactly what happened: 920 was fine at home and left a
+        scrollbar at work.
+
+        So ask the column how much it wants rather than guessing, and clamp
+        to the screen -- a window taller than the display is a worse failure
+        than a scrollbar, and on a laptop a generous fixed size would cause
+        precisely that.
+        """
+        want_h = self._right_layout.sizeHint().height() + 40   # + chrome
+        h = max(self.height(), want_h)
+        w = self.width()
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            h = min(h, avail.height())
+            w = min(w, avail.width())
+        self.resize(w, h)
 
     def _set_window_title(self):
         try:
