@@ -42,6 +42,9 @@ _lazy = {
     "plot_frame": ".get_frame",
     "ssss": ".ssss",
     "next_ssss_stem": ".ssss",
+    # module name deliberately differs from the function name, which side-
+    # steps the submodule-shadowing trap described in __getattr__ below
+    "screen_sensitivity_correction": ".flatfield",
 }
 
 __all__ = sorted(_lazy)
