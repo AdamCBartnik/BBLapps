@@ -316,7 +316,17 @@ class MainWindow(QMainWindow):
 
         self._build_camera_info_group(bottom)
         self._build_data_processing_group(bottom)
-        self._build_roi_group(bottom)
+
+        # Hardware ROI and the accumulator stack in one column: the ROI group
+        # is short and top-packed, so this uses the space under it rather
+        # than widening the strip.
+        roi_col = QVBoxLayout()
+        roi_col.setSpacing(4)
+        bottom.addLayout(roi_col)
+        self._build_roi_group(roi_col)
+        self._build_accumulate_group(roi_col)
+        roi_col.addStretch()
+
         bottom.addStretch()
 
     # ------------------------------------------------------------------
@@ -391,6 +401,7 @@ class MainWindow(QMainWindow):
         # pipeline, so changing it invalidates whatever is already
         # accumulated -- see _reset_frame_avg.
         self._subtract_bg_chk.toggled.connect(self._reset_frame_avg)
+        self._subtract_bg_chk.toggled.connect(self._reset_maxhold)
         # Saving is blocked while subtraction is active: the background is
         # captured from the processed pipeline (post-subtract), so allowing it
         # would save an already-subtracted image and poison later subtraction
@@ -433,6 +444,7 @@ class MainWindow(QMainWindow):
         self._allow_neg_chk = QCheckBox("Allow Negative")
         self._allow_neg_chk.toggled.connect(self._trigger_redraw)
         self._allow_neg_chk.toggled.connect(self._reset_frame_avg)
+        self._allow_neg_chk.toggled.connect(self._reset_maxhold)
         grid.addWidget(self._allow_neg_chk, 0, 2)
 
         grid.addWidget(QLabel("Max:"), 1, 0, Qt.AlignRight)
@@ -666,6 +678,7 @@ class MainWindow(QMainWindow):
         # Absolute thresholding happens per-frame BEFORE averaging, so it is
         # upstream too (Percent is applied after, and is harmless here).
         self._threshold_chk.toggled.connect(self._reset_frame_avg)
+        self._threshold_chk.toggled.connect(self._reset_maxhold)
         # decimals(3) is what the box will ACCEPT (0.1%, and finer on the one
         # camera that has ever needed it); TrimmedDoubleSpinBox keeps it from
         # displaying "5.000" for the round values used the rest of the time.
@@ -678,12 +691,14 @@ class MainWindow(QMainWindow):
         self._threshold_spin.editingFinished.connect(self._trigger_redraw)
         self._threshold_spin.valueChanged.connect(self._trigger_redraw)
         self._threshold_spin.valueChanged.connect(self._reset_frame_avg)
+        self._threshold_spin.valueChanged.connect(self._reset_maxhold)
         self._threshold_type_combo = QComboBox()
         self._threshold_type_combo.addItems(["Percent", "Absolute"])
         self._threshold_type_combo.setFixedWidth(75)
         self._threshold_type_combo.currentTextChanged.connect(self._on_threshold_type_changed)
         self._threshold_type_combo.currentTextChanged.connect(self._trigger_redraw)
         self._threshold_type_combo.currentTextChanged.connect(self._reset_frame_avg)
+        self._threshold_type_combo.currentTextChanged.connect(self._reset_maxhold)
         row1.addWidget(self._threshold_chk)
         row1.addWidget(self._threshold_spin)
         row1.addWidget(self._threshold_type_combo)
@@ -763,6 +778,9 @@ class MainWindow(QMainWindow):
         self._frame_avg_count = 0
         self._frame_avg_n = 0
         self._frame_avg_sum = None
+        # Per-pixel running maximum (Save max value)
+        self._maxhold_img = None
+        self._maxhold_count = 0
 
     def _build_roi_group(self, parent):
         lay = self._bottom_group("Hardware Region of Interest (ROI)", parent)
@@ -830,6 +848,30 @@ class MainWindow(QMainWindow):
         grid.setColumnStretch(4, 1)   # keep the entries left-packed
         lay.addLayout(grid)
         lay.addStretch()              # and top-packed, rather than spread out
+
+    def _build_accumulate_group(self, parent):
+        lay = self._bottom_group("Data Processing", parent)
+
+        row = QHBoxLayout()
+        self._maxhold_chk = QCheckBox("Save max value")
+        self._maxhold_chk.setToolTip(
+            "Keep the per-pixel maximum over every frame since the last "
+            "reset. Sweep the beam across the screen to build up a map of "
+            "its response.")
+        self._maxhold_chk.toggled.connect(self._trigger_redraw)
+        row.addWidget(self._maxhold_chk)
+        row.addStretch()
+        self._maxhold_count_lbl = QLabel("—")
+        self._maxhold_count_lbl.setFixedWidth(48)
+        self._maxhold_count_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        row.addWidget(self._maxhold_count_lbl)
+        self._maxhold_reset_btn = QPushButton("Reset")
+        self._maxhold_reset_btn.setFixedWidth(50)
+        self._maxhold_reset_btn.setToolTip("Discard the accumulated maximum")
+        self._maxhold_reset_btn.clicked.connect(self._reset_maxhold)
+        self._maxhold_reset_btn.clicked.connect(self._trigger_redraw)
+        row.addWidget(self._maxhold_reset_btn)
+        lay.addLayout(row)
 
     def _build_sw_roi_group(self):
         lay = self._right_group("Software ROI")
@@ -982,6 +1024,22 @@ class MainWindow(QMainWindow):
         self._jitter_y_buf.clear()
         self._sx_buf.clear()
         self._sy_buf.clear()
+
+    def _reset_maxhold(self):
+        """Discard the accumulated per-pixel maximum.
+
+        Wired to the same upstream controls as _reset_frame_avg, and for the
+        same reason: the accumulator holds frames processed under the
+        settings in force when they arrived, so changing background
+        subtraction or the absolute threshold makes what's already in there
+        incomparable with what arrives next. A max is worse than an average
+        here -- an average washes a stale frame out after N more, but a
+        single too-bright stale frame survives in the maximum forever.
+        """
+        self._maxhold_img = None
+        self._maxhold_count = 0
+        if hasattr(self, "_maxhold_count_lbl"):
+            self._maxhold_count_lbl.setText("—")
 
     def _reset_frame_avg(self):
         """Discard the accumulated average and its buffered frames.
@@ -1718,6 +1776,31 @@ class MainWindow(QMainWindow):
                 and self._threshold_type_combo.currentText() == "Absolute"):
             cutoff = self._threshold_spin.value()
             img = np.where(img >= cutoff, img, 0).astype(np.float32)
+
+        # Per-pixel running maximum — BEFORE averaging, so the max is taken
+        # over the incoming frames themselves rather than over an average of
+        # them (which would smear the peak the sweep is trying to record).
+        #
+        # Sits after background subtraction and the absolute threshold on
+        # purpose: those set the zero level, and a max over frames with
+        # different zero levels is meaningless. That's also why the
+        # accumulator is discarded when either of them changes -- see
+        # _reset_maxhold.
+        if self._maxhold_chk.isChecked():
+            acc = self._maxhold_img
+            if acc is None or acc.shape != img.shape:
+                acc = img.astype(np.float32, copy=True)   # ROI/camera changed
+                self._maxhold_count = 0
+            else:
+                np.maximum(acc, img, out=acc)
+            self._maxhold_img = acc
+            self._maxhold_count += 1
+            self._maxhold_count_lbl.setText(str(self._maxhold_count))
+            # Hand DOWNSTREAM a copy: the accumulator is long-lived state and
+            # must not be aliased by anything later in the pipeline.
+            img = acc.copy()
+        else:
+            self._maxhold_count_lbl.setText("—")
 
         # Frame averaging — circular buffer + running sum, O(1) per frame
         # (ported from MATLAB make_plot.m, but keeping a raw float64 sum and
