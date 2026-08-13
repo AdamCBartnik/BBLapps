@@ -31,8 +31,11 @@ orientation; **git history is the source of truth** for what changed.
       bbl.cnf         model_qe_map, patterns  (CNF photocathode masks)
 
   `_physics.py` is private and shared by gun/solenoid. Nothing is imported
-  until touched — beamview uses `BBL.utilities` on lab machines that have
-  no matplotlib, so `import BBL` must not pull in `bbl.plot`.
+  until touched, so `import BBL` stays cheap and a broken optional dep can
+  only break the subpackage that needs it. (matplotlib is NOT optional —
+  it is a core dependency, and the lab machines have it. `get_colormap`
+  returns a matplotlib `Colormap`; pass `return_list=True` for the raw
+  (m, 3) array, which is what beamview feeds to pyqtgraph.)
   **Naming rule: a module is named for its SUBJECT, never for a function it
   contains.** A module sharing a name with a function it exports shadows
   that function once imported — that shipped as a real bug twice before the

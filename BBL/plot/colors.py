@@ -2,9 +2,16 @@
 get_colormap(name, m, p)  —  Python port of the MATLAB get_colormap utility.
 
     get_colormap()            → sorted list of available colormap names
-    get_colormap(name)        → (256, 3) float array, RGB values in [0, 1]
+    get_colormap(name)        → a matplotlib Colormap, ready for cmap=
     get_colormap(name, m)     → resampled to m entries
     get_colormap(name, m, p)  → resampled with power-law exponent p
+
+    get_colormap(name, return_list=True)  → the raw (m, 3) float array
+
+Almost every caller is handing the result straight to matplotlib, so that is
+what comes back by default. `return_list=True` gives the underlying RGB array
+instead, for consumers that build their own lookup table -- beamview feeds it
+to pyqtgraph's setLookupTable as (256, 4) uint8.
 
 Append '_r' to any name to reverse the colormap.
 
@@ -20,8 +27,8 @@ _DIR = Path(__file__).parent / "colormaps"
 _BUILTINS = ["bone", "gray", "hot", "jet"]
 
 
-def get_colormap(name=None, m=256, p=1.0):
-    if name is None:
+def get_colormap(name=None, m=256, p=1.0, return_list=False):
+    if name is None:                    # the name list, whatever return_list says
         txt_names = [f.stem for f in sorted(_DIR.glob("*.txt"))]
         all_names = txt_names + _BUILTINS
         capitalized = [n[0].upper() + n[1:] for n in all_names]
@@ -48,7 +55,11 @@ def get_colormap(name=None, m=256, p=1.0):
     if reverse:
         cm = cm[::-1]
 
-    return cm
+    if return_list:
+        return cm
+    from matplotlib.colors import ListedColormap
+    # keep the name the caller asked for, '_r' and all, so the repr is useful
+    return ListedColormap(cm, name=name)
 
 
 def _resample(cm, m, p=1.0):

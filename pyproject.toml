@@ -9,12 +9,14 @@ description = "Bright Beams Lab shared Python utilities: live plots for scans, P
 requires-python = ">=3.9"
 dependencies = [
     "numpy",
+    # bbl.plot needs it directly: get_colormap returns a matplotlib Colormap,
+    # and the HSV resampling behind it uses matplotlib.colors.
+    "matplotlib",
 ]
 
 [project.optional-dependencies]
-# everything the scan scripts / notebooks need on top of numpy
+# everything the scan scripts / notebooks need on top of the core
 scans = [
-    "matplotlib",
     "ipympl",
     "pyepics",
 ]

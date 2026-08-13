@@ -1004,7 +1004,8 @@ class MainWindow(QMainWindow):
             name += "_r"
         try:
             from BBL.plot.colors import get_colormap
-            rgb = get_colormap(name, m=256)        # (256, 3) float 0-1
+            # pyqtgraph wants its own uint8 LUT, so ask for the raw array
+            rgb = get_colormap(name, m=256, return_list=True)   # (256, 3) float 0-1
             lut = np.empty((256, 4), dtype=np.uint8)
             lut[:, :3] = (rgb * 255).astype(np.uint8)
             lut[:, 3] = 255

@@ -231,11 +231,10 @@ def plot_frame(data, ax=None, log=False, show_colorbar=True, cmap=None,
     cmap_name = cmap or data.get("colormap") or "freeze"
     try:
         from ..plot.colors import get_colormap
-        from matplotlib.colors import ListedColormap
         name = cmap_name.lower()
         if data.get("cmap_reversed") and not name.endswith("_r"):
             name += "_r"
-        mpl_cmap = ListedColormap(get_colormap(name))
+        mpl_cmap = get_colormap(name)
     except Exception:
         mpl_cmap = "gray"
 
