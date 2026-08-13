@@ -29,6 +29,67 @@ Organised into subpackages
 
 ---
 
+## An example scan script
+
+Most hand-written scans look like this — set something, measure something,
+watch it happen, fit it, save it.
+
+```python
+import time
+import numpy as np
+import BBL as bbl
+
+%matplotlib widget
+bbl.plot.warmup()          # once per kernel, before the first live plot
+
+setpoints = np.linspace(-0.5, -5.0, 10)
+
+lp = bbl.plot.LivePlot(xlabel="solenoid current (A)", ylabel="centroid (um)")
+lp.set_interactive(False)      # don't let stray clicks queue up during the scan
+
+done, cx, cx_err, cy, cy_err = [], [], [], [], []
+try:
+    with bbl.epics.restore_pvs("SOL1_cmd"):        # put it back, whatever happens
+        for current in setpoints:
+            bbl.epics.caput("SOL1_cmd", current)
+            time.sleep(0.5) # Allow solenoid to settle
+
+            x, xe = bbl.epics.caget("B24:centroid_x", n_avg=10, stale=True)
+            y, ye = bbl.epics.caget("B24:centroid_y", n_avg=10, stale=True)
+
+            done.append(current)
+            cx.append(x); cx_err.append(xe)
+            cy.append(y); cy_err.append(ye)
+
+            lp.update(done, cx, y_err=cx_err, label="x", style="ro")
+            lp.update(done, cy, y_err=cy_err, label="y", style="bs")
+finally:
+    lp.set_interactive(True)   # give the mouse back even if the scan threw
+
+# fit, draw it on the same axes, and force the redraw ourselves
+coeffs, errs, cov = bbl.utilities.polyfit_weights(done, cx, cx_err, deg=1)
+lp.ax.plot(done, np.polynomial.polynomial.polyval(np.array(done), coeffs), "k-")
+lp.refresh()
+print(f"slope = {coeffs[1]:.3f} +/- {errs[1]:.3f} um/A")
+
+bbl.utilities.ssss(lp.fig, name="solenoid_scan",
+                   data={"current": np.array(done),
+                         "centroid_x": np.array(cx),
+                         "centroid_y": np.array(cy)})
+```
+
+Some details in there:
+
+- **`set_interactive` is paired with a `try`/`finally`.** If the scan raises, or
+  you interrupt it, the plot would otherwise stay frozen to the mouse for the
+  rest of the session.
+- **`restore_pvs` wraps the loop**, so the solenoid goes back to where it
+  started on a normal finish, an exception, or a Ctrl-C.
+- **`stale=True` on the reads**, because a `caput` was just issued and the
+  cached centroid might still be from the previous setpoint. 
+- **`refresh()` after drawing the fit**, since that artist was added directly
+  to the axes rather than through `update`, which would have redrawn for us.
+
 ## `bbl.epics`
 
 ### `bbl.epics.caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, stale=False, return_std=False)`
@@ -148,68 +209,6 @@ updates during the scan, then replay all at once as chaos when the cell ends.
 browser sends nothing at all, and `set_interactive(True)` gives it back.
 
 No-op outside Jupyter, so it is safe to leave in a script.
-
-### A complete scan
-
-Most hand-written scans look like this — set something, measure something,
-watch it happen, fit it, save it.
-
-```python
-import numpy as np
-import BBL as bbl
-
-%matplotlib widget
-bbl.plot.warmup()          # once per kernel, before the first live plot
-
-setpoints = np.linspace(-0.5, -5.0, 10)
-
-lp = bbl.plot.LivePlot(xlabel="solenoid current (A)", ylabel="centroid (um)")
-lp.set_interactive(False)      # don't let stray clicks queue up during the scan
-
-done, cx, cx_err, cy, cy_err = [], [], [], [], []
-try:
-    with bbl.epics.restore_pvs("SOL1_cmd"):        # put it back, whatever happens
-        for current in setpoints:
-            bbl.epics.caput("SOL1_cmd", current)
-            x, xe = bbl.epics.caget("B24:centroid_x", n_avg=10, stale=True)
-            y, ye = bbl.epics.caget("B24:centroid_y", n_avg=10, stale=True)
-
-            done.append(current)
-            cx.append(x); cx_err.append(xe)
-            cy.append(y); cy_err.append(ye)
-
-            lp.update(done, cx, y_err=cx_err, label="x", style="ro")
-            lp.update(done, cy, y_err=cy_err, label="y", style="bs")
-finally:
-    lp.set_interactive(True)   # give the mouse back even if the scan threw
-
-# fit, draw it on the same axes, and force the redraw ourselves
-coeffs, errs, cov = bbl.utilities.polyfit_weights(done, cx, cx_err, deg=1)
-lp.ax.plot(done, np.polynomial.polynomial.polyval(np.array(done), coeffs), "k-")
-lp.refresh()
-print(f"slope = {coeffs[1]:.3f} +/- {errs[1]:.3f} um/A")
-
-bbl.utilities.ssss(lp.fig, name="solenoid_scan",
-                   data={"current": np.array(done),
-                         "centroid_x": np.array(cx),
-                         "centroid_y": np.array(cy)})
-```
-
-Four details in there are the whole point of these helpers:
-
-- **`set_interactive` is paired with a `try`/`finally`.** If the scan raises, or
-  you interrupt it, the plot would otherwise stay frozen to the mouse for the
-  rest of the session.
-- **`restore_pvs` wraps the loop**, so the solenoid goes back to where it
-  started on a normal finish, an exception, or a Ctrl-C.
-- **`stale=True` on the reads**, because a `caput` was just issued and the
-  cached centroid still describes the previous setpoint.
-- **`refresh()` after drawing the fit**, since that artist was added directly
-  to the axes rather than through `update`, which would have redrawn for us.
-
-`polyfit_weights` returns coefficients lowest-power-first, so `coeffs[1]` is
-the slope — hence `numpy.polynomial.polynomial.polyval` rather than
-`np.polyval`, which expects the opposite order.
 
 ### `bbl.plot.get_colormap(name=None, m=256, p=1.0, return_list=False)`
 
