@@ -42,9 +42,9 @@ import time
 
 import numpy as np
 
-from .pv_tools import caget, caput, restore_pvs
-from .live_plot import LivePlot, display_canvas, set_plot_interactive
-from .physics import momentum_from_voltage_kv
+from ..epics.pv_tools import caget, caput, restore_pvs
+from ..plot.live_plot import LivePlot, display_canvas, set_plot_interactive
+from .._physics import momentum_from_voltage_kv
 
 _PV_KEYS = ("laser_h_cmd", "laser_h_rdbk", "laser_v_cmd", "laser_v_rdbk",
             "corr_h_cmd", "corr_h_rdbk", "corr_v_cmd", "corr_v_rdbk",

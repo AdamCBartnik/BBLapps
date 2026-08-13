@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # shadows the ssss() function for the rest of the process -- so merely
 # importing beamview would break bbl.ssss() in the same session.  Going
 # through BBL's __getattr__ resolves and re-caches the functions instead.
-from BBL import get_todays_directory, next_ssss_stem
+from BBL.utilities import get_todays_directory, next_ssss_stem
 
 
 # ---------------------------------------------------------------------------

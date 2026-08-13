@@ -10,8 +10,8 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .live_plot import LivePlot, display_canvas, set_plot_interactive
-from .pv_tools import caget, caput, restore_pvs
+from ..plot.live_plot import LivePlot, display_canvas, set_plot_interactive
+from ..epics.pv_tools import caget, caput, restore_pvs
 from .fitting import polyfit_weights
 
 def measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0,

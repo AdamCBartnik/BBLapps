@@ -44,51 +44,12 @@ import time
 
 import numpy as np
 
-from .pv_tools import caget, caput, restore_pvs
-from .live_plot import LivePlot, set_plot_interactive
-from .physics import momentum_from_voltage_kv, brho_tesla_meters
+from ..epics.pv_tools import caget, caput, restore_pvs
+from ..plot.live_plot import LivePlot, set_plot_interactive
+from .._physics import momentum_from_voltage_kv, brho_tesla_meters
+from ..fieldmaps.maps import load_onaxis_field
 
 _PARAM_NAMES = ("x_off", "xp_off", "y_off", "yp_off")
-
-
-# ---------------------------------------------------------------------------
-# Field map
-# ---------------------------------------------------------------------------
-
-def load_onaxis_field(gdf_path):
-    """Load an on-axis Bz(z) field map (T per A) from a .gdf file.
-
-    Handles both a 1D map (blocks 'Z', 'Bz') and a 2D (r, z) map (blocks
-    'R', 'Z', 'Bz', ...), extracting the on-axis (smallest |R|) slice in
-    the latter case.  Returns (z, bz), sorted by z, on a uniform grid.
-    """
-    import easygdf
-
-    d = easygdf.load(str(gdf_path))
-    blocks = {b["name"].strip().lower(): np.asarray(b["value"], dtype=float)
-              for b in d["blocks"]}
-    if "z" not in blocks or "bz" not in blocks:
-        raise ValueError(f"{gdf_path}: expected GDF blocks 'Z' and 'Bz'; "
-                         f"found {list(blocks)}")
-    z, bz = blocks["z"], blocks["bz"]
-
-    if "r" in blocks:
-        r = blocks["r"]
-        r0 = r[np.argmin(np.abs(r))]
-        if not np.isclose(r0, 0.0, atol=1e-6):
-            print(f"[solenoid] WARNING: field map's smallest |R| is "
-                  f"{r0:g} m, not exactly 0 — using it as the on-axis "
-                  "approximation")
-        mask = np.isclose(r, r0, atol=1e-9)
-        z, bz = z[mask], bz[mask]
-
-    order = np.argsort(z)
-    z, bz = z[order], bz[order]
-    dz = np.diff(z)
-    if not np.allclose(dz, dz[0], rtol=1e-3):
-        raise ValueError(f"{gdf_path}: on-axis Z grid is not uniform "
-                         "(required for the transfer-matrix integration)")
-    return z, bz
 
 
 # ---------------------------------------------------------------------------

@@ -28,8 +28,8 @@ Usage:
 import time
 import numpy as np
 
-from .pv_tools import caget
-from .live_plot import display_canvas
+from ..epics.pv_tools import caget
+from ..plot.live_plot import display_canvas
 
 # Bits carried by each areaDetector DataType, used when the IOC doesn't
 # serve the BitsPerPixel_RBV extension (matches
@@ -230,7 +230,7 @@ def plot_frame(data, ax=None, log=False, show_colorbar=True, cmap=None,
 
     cmap_name = cmap or data.get("colormap") or "freeze"
     try:
-        from .get_colormap import get_colormap
+        from ..plot.colors import get_colormap
         from matplotlib.colors import ListedColormap
         name = cmap_name.lower()
         if data.get("cmap_reversed") and not name.endswith("_r"):

@@ -16,15 +16,28 @@ orientation; **git history is the source of truth** for what changed.
 - `EMPAD/` — the EMPAD detector's IOC (electron detector, two-image pump/probe).
   `scripts/empad_ioc.py` (new areaDetector-style IOC) + `scripts/python_ioc.py`
   (camserver/trigger controller). Originals in `scripts/original_version/`.
-- `BBL/` — shared Python package for scripts/notebooks (`import BBL as bbl`):
-  `pv_tools.py` (`caget`/`caput`/`restore_pvs` — monitor-cached, fresh-update
-  veto, NaN on failure), `live_plot.py` (`LivePlot` + interactivity freeze
-  for ipympl/JupyterLab), `fitting.py` (`polyfit_weights`),
-  `measure_trend.py` and `center_laser_in_gun.py` (ported scan scripts),
-  `today.py` (data-dir logic), `get_colormap.py`. A local untracked
-  `demo_ioc.py` (gitignored) simulates PVs incl. a mini gun for testing.
-  Lazy `__init__` — importing one helper doesn't drag in matplotlib/pyepics.
-  Was `utilities/` before 2026-07.
+- `BBL/` — shared Python package for scripts/notebooks (`import BBL as bbl`),
+  organised into subpackages the way scipy is (reorganised 2026-08; there
+  are NO flat aliases, `bbl.caget` is gone):
+
+      bbl.epics       caget, caput, restore_pvs
+      bbl.plot        LivePlot, warmup, get_colormap
+      bbl.image       get_frame, plot_frame, screen_sensitivity_correction
+      bbl.utilities   polyfit_weights, get_todays_directory, ssss,
+                      next_ssss_stem, measure_trend
+      bbl.gun         center_laser_in_gun, fit_gun_aberration
+      bbl.solenoid    solenoid_scan, fit_solenoid_scan
+      bbl.fieldmaps   load_onaxis_field  (+ the .gdf maps, gitignored)
+
+  `_physics.py` is private and shared by gun/solenoid. Nothing is imported
+  until touched — beamview uses `BBL.utilities` on lab machines that have
+  no matplotlib, so `import BBL` must not pull in `bbl.plot`.
+  **Naming rule: a module is named for its SUBJECT, never for a function it
+  contains.** A module sharing a name with a function it exports shadows
+  that function once imported — that shipped as a real bug twice before the
+  reorganisation (hence `frames.py` not `get_frame.py`, `saving.py` not
+  `ssss.py`). Subpackage names are domains, so they can't collide.
+  Was `utilities/` before 2026-07, flat until 2026-08.
   Pip-installable via the root `pyproject.toml`: `pip install -e .` makes
   `import BBL` work from any directory (done on this machine); beamview and
   the IOCs are NOT pip-installed — they run from a checkout / copied files.

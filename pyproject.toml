@@ -22,7 +22,17 @@ scans = [
 # Only BBL is pip-installed; beamview and the vpcam/EMPAD IOCs are run from
 # a repo checkout (or deployed by copying files), same as before.
 [tool.setuptools]
-packages = ["BBL"]
+packages = [
+    "BBL",
+    "BBL.epics",
+    "BBL.fieldmaps",
+    "BBL.gun",
+    "BBL.image",
+    "BBL.plot",
+    "BBL.solenoid",
+    "BBL.utilities",
+]
 
 [tool.setuptools.package-data]
-BBL = ["colormaps/*.txt"]
+# the colormap text files moved with get_colormap into BBL/plot/
+"BBL.plot" = ["colormaps/*.txt"]
