@@ -82,10 +82,63 @@ invisible until its scan finishes.
 
 A matplotlib error-bar plot that updates in place while a scan runs.
 
-`update(x, y, y_err=None, label=None, style=None)` replaces what is drawn —
-pass the full arrays each time, don't append. Several traces can share one
-axes by passing different `label`s. Also has `refresh()` and
-`set_interactive(enabled=True)`.
+| Argument | Meaning |
+|---|---|
+| `xlabel`, `ylabel`, `title` | Set on the axes if given. |
+| `ax` | Draw into an existing Axes. By default it makes its own figure and displays the widget immediately, rather than waiting for the cell to end — which is what lets you watch a scan as it goes. |
+| `style` | Default matplotlib format string for traces, e.g. `'ro'`. |
+| `capsize` | Error-bar cap size. |
+
+```python
+lp = bbl.plot.LivePlot(xlabel="solenoid current (A)", ylabel="centroid x")
+for i, s in enumerate(setpoints):
+    ...
+    lp.update(setpoints[:i+1], measured[:i+1], y_err=errs[:i+1])
+```
+
+### `LivePlot.update(x, y, y_err=None, label=None, style=None)`
+
+Replace this trace's data and redraw. **Pass the full arrays every time** —
+`update` replaces what is drawn rather than appending to it, so the usual
+pattern is to grow a list and hand over the whole thing each iteration.
+
+| Argument | Meaning |
+|---|---|
+| `x`, `y` | The complete data so far. |
+| `y_err` | Optional error bars. Give it and you get an errorbar plot, omit it and you get a plain line. |
+| `label` | Which trace to replace. Different labels are independent traces on the same axes, so several quantities can share one plot. `None` is itself a valid label — the default single trace. |
+| `style` | Format string for this trace. Remembered per trace, so you only need it the first time. |
+
+The artist is rebuilt each call, because a matplotlib `ErrorbarContainer`
+can't have its data swapped in place. That is cheap at scan cadence. Calls
+`refresh()` for you, so a plain `update` loop needs nothing else.
+
+### `LivePlot.refresh()`
+
+Force a redraw now, from inside a blocking loop. `update` already calls it —
+you only need it directly after changing the axes yourself, say adding a fit
+line or an axvline mid-scan.
+
+It issues a synchronous `draw()` rather than `draw_idle()` on purpose. Under
+ipympl, `draw_idle` needs a kernel↔browser round trip that cannot complete
+while a cell is blocked in a scan loop, so nothing would appear until the scan
+finished — exactly when you no longer need it. `draw()` renders in the kernel
+and pushes the frame straight to the browser.
+
+Autoscaling is applied only when it is still on, so a toolbar zoom or pan
+survives subsequent updates instead of being yanked back.
+
+### `LivePlot.set_interactive(enabled=True)`
+
+Freeze or unfreeze mouse interaction with the figure.
+
+Touching a live plot while a scan holds the kernel — zooming, clicking, even
+just hovering — queues mouse events browser-side. They compete with the frame
+updates during the scan, then replay all at once as chaos when the cell ends.
+`set_interactive(False)` sets `pointer-events: none` on the canvas so the
+browser sends nothing at all, and `set_interactive(True)` gives it back.
+
+No-op outside Jupyter, so it is safe to leave in a script.
 
 ### `get_colormap(name=None, m=256, p=1.0, return_list=False)`
 
