@@ -1,22 +1,7 @@
 # BBL
 
-Shared Python utilities for **Cornell's Bright Beams Lab (BBL)** — the
-photoinjector / beamline group. These are the tools the lab's scripts and
-JupyterLab notebooks are built from: reading and writing EPICS PVs, grabbing
-camera frames, running and fitting the standard machine scans, and saving
-figures where the rest of the lab expects to find them.
-
-Much of this is ported from the group's original MATLAB scripts and adapted to
-the current accelerator, so where a MATLAB original exists the conventions
-(argument meanings, fit parameterisations, file naming) deliberately match it.
-
-```python
-import BBL as bbl
-
-frame = bbl.image.get_frame("B24Screen1")
-bbl.image.plot_frame(frame)
-bbl.utilities.ssss(name="first_light", data=frame)
-```
+Shared Python utilities for **Cornell's Bright Beams Lab (BBL)**. Much of this 
+is ported from the group's original MATLAB scripts and is very much a work in progress.
 
 ## Install
 
@@ -24,15 +9,12 @@ bbl.utilities.ssss(name="first_light", data=frame)
 pip install -e .          # from the repo root
 ```
 
-Requires numpy and matplotlib. `pip install -e ".[scans]"` adds `pyepics` and
-`ipympl`, which you need for anything that touches the machine or draws a live
-plot. Nothing is imported until you touch it, so `import BBL` stays fast and a
-missing optional dependency only breaks the subpackage that needs it.
+Requires numpy, matplotlib, pyepics, and ipympl. Nothing is imported until you touch it, 
+so `import BBL` stays fast and a missing optional dependency only breaks the subpackage that needs it.
 
 ## Layout
 
-Organised into subpackages the way scipy is. There are **no flat aliases** —
-it is `bbl.epics.caget`, not `bbl.caget`.
+Organised into subpackages
 
 | Subpackage | Contents |
 |---|---|
@@ -45,12 +27,9 @@ it is `bbl.epics.caget`, not `bbl.caget`.
 | `bbl.fieldmaps` | `load_onaxis_field` |
 | `bbl.cnf` | `model_qe_map`, `patterns` |
 
-Every scan function returns a plain data dict and has a matching `fit_*`
-that takes it, so **you can always refit an old scan without rerunning it.**
-
 ---
 
-## `bbl.epics` — talking to the machine
+## `bbl.epics`
 
 ### `caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, stale=False, return_std=False)`
 
@@ -61,22 +40,22 @@ channel. A sequence of names returns an array.
 | Argument | Meaning |
 |---|---|
 | `n_avg` | Samples to average. `>1` returns `(avg, std)`. |
-| `pause` | `0` (default) paces off camonitor updates — each sample waits for a genuinely new value. `>0` samples every `pause` seconds instead. |
+| `pause` | `0` (default) uses camonitor updates. `>0` samples every `pause` seconds instead. |
 | `max_pause` | With camonitor pacing, give up and return NaN if a PV goes this long without updating. |
-| `stale` | Treat the cached value as stale, so a fresh update is required. Use right after a `caput`. |
+| `stale` | Treat the cached value as stale, so a fresh update is required. E.g. use after a `caput`. |
 | `return_std` | Force the `(avg, std)` return even when `n_avg == 1`. |
 
 ### `caput(pv_names, values, wait=True, timeout=5.0)`
 
 Write one or more PVs. `wait=True` blocks until the IOC confirms the record
-processed (like MATLAB's `lcaPut`); `wait=False` fires and returns. A scalar
+processed; `wait=False` fires and returns. A scalar
 value broadcasts across a sequence of names. Returns `True` if every put
 landed — failures are printed, not raised.
 
 ### `restore_pvs(*pv_names)`
 
-Context manager that records PVs on entry and writes them back on exit — the
-MATLAB `onCleanup` pattern. The restore runs on **any** exit, including an
+Context manager that records PVs on entry and writes them back on exit. 
+The restore runs on **any** exit, including an
 exception or a Ctrl-C / kernel interrupt.
 
 ```python
@@ -89,7 +68,15 @@ silently scanning something you can't put back would be worse than stopping.
 
 ---
 
-## `bbl.plot` — live plots and colormaps
+## `bbl.plot`
+
+### `warmup()`
+
+This is a workaround for a jupyterlab annoyance. Run once in the top cell of
+a notebook right after `%matplotlib widget`. The first widget in a
+fresh kernel needs a frontend handshake that can't complete while a scan is
+blocking the kernel — so without this, the first live plot of a session stays
+invisible until its scan finishes. 
 
 ### `LivePlot(xlabel='', ylabel='', title='', ax=None, style='ro', capsize=3)`
 
@@ -100,17 +87,9 @@ pass the full arrays each time, don't append. Several traces can share one
 axes by passing different `label`s. Also has `refresh()` and
 `set_interactive(enabled=True)`.
 
-### `warmup()`
-
-Run once in a cell right after `%matplotlib widget`. The first widget in a
-fresh kernel needs a frontend handshake that can't complete while a scan is
-blocking the kernel — so without this, the first live plot of a session stays
-invisible until its scan finishes. Repeat calls, and calls outside Jupyter, do
-nothing.
-
 ### `get_colormap(name=None, m=256, p=1.0, return_list=False)`
 
-The lab's colormaps, including `freeze`. Append `_r` to any name to reverse it.
+The lab's colormaps from a variety of sources, many from cmasher. Append `_r` to any name to reverse it.
 
 | Call | Returns |
 |---|---|
@@ -119,8 +98,7 @@ The lab's colormaps, including `freeze`. Append `_r` to any name to reverse it.
 | `get_colormap("freeze", return_list=True)` | The raw `(m, 3)` float RGB array |
 
 `m` resamples to that many entries, `p` applies a power-law to the resampling.
-`return_list=True` is for consumers that build their own lookup table —
-beamview feeds it to pyqtgraph as `(256, 4)` uint8.
+`return_list=True` is for consumers that build their own lookup table
 
 ---
 
