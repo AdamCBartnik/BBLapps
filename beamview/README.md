@@ -26,16 +26,10 @@ Two things that are easy to get wrong:
   2 ms versus 250 ms at 2048×1536. Without it beamview silently falls back to
   scipy and just feels sluggish on big cameras, with nothing to tell you why.
 
-**Big sensors also need `EPICS_CA_MAX_ARRAY_BYTES` raised** on the client. The
-symptom is a failed transfer and a timed-out `ca.get` on the image array. Size
-it from the *wire* format, not the pixel depth: Channel Access has no unsigned
-16-bit type, so Mono16 goes out as 32-bit, and the frame costs
-`width × height × 4` bytes — 4024×3036 is about 49 MB. Setting it to
-`100000000` covers everything here. On Windows, make it a system environment
-variable so it applies to whatever launches beamview.
-
-`vpcam/docs/how_to_install_iocs_on_windows.txt` covers this in more detail,
-alongside the camera-side setup.
+**Big sensors also need `EPICS_CA_MAX_ARRAY_BYTES` set** on the client. The
+symptom is a failed transfer and a timed-out `ca.get` on the image array. Setting it to
+`100000000` is sufficient for up to ~4000x3000 pixel cameras. On Windows, it is a system environment
+variable.
 
 ## Running it
 
@@ -56,12 +50,6 @@ block at the top marked `--- edit these ---`:
 | `CONDA` | The miniforge/miniconda root. `where conda` in an Anaconda Prompt if unsure — miniforge and miniconda differ |
 | `REPO` | The BBLapps checkout |
 | `DEFAULT` | Which config Enter picks, e.g. `xlight.yaml`. Blank it (`""`) to make Enter quit instead |
-| `DEBUG` | Not per-machine — `1` keeps the console open and shows beamview's output |
-
-Only the first three change per machine. With `DEBUG=0` the launcher goes
-through `pythonw.exe` so the console disappears, which also means a crash at
-startup leaves no message behind — flip it to `1` first thing when something
-won't start.
 
 Drop a new `.yaml` into `configs/` and it appears in the menu automatically.
 
@@ -85,24 +73,23 @@ records go.
 
 ## What it does
 
-Image handling — hardware ROI, rotation, pixel or calibrated units, frame
-averaging with a reset, background capture and subtraction, and a 3×3 median
-filter.
+Basic image processing — hardware/software ROI, rotation, frame
+averaging, background subtraction, super-gaussian blur, thresholding, 
+and a median filter.
 
-Analysis — centroid, widths, super-gaussian fit, threshold with an optional
-allow-negative, and a *Brightest box* software ROI that restricts every
-analysis to the brightest N×N region.
+Analysis — centroids, widths, integrated and peak intensity. These values are 
+then sent to EPICS records.
 
-*Save max value* keeps a per-pixel running maximum — sweep the beam across a
-viewscreen and the accumulated map is that screen's sensitivity, which
-`bbl.image.screen_sensitivity_correction` then divides out of real images.
+Snapshots save a PNG plus an `.h5`, which can be loaded back using
+`bbl.image.get_frame("....h5")`.
 
-Snapshots save a PNG plus an `.h5`, and `bbl.image.get_frame("....h5")` reads
-them straight back.
+*Brightest box* is software ROI that moves a rectangular ROI to the current 
+brightest region per frame. Sometimes simpler to use than specifying a static ROI.
 
-> **The plotted x-axis increases to the LEFT.** This exists so beamview's
-> screen frame stays right-handed relative to the accelerator physics
-> convention that the solenoid-scan fit assumes.
+*Save max value* keeps a per-pixel running maximum
+
+> **Note: the plotted x-axis increases to the LEFT.** This exists so beamview's
+> screen frame make a right-handed coordinate system with the beam traveling in +z.
 
 ## EPICS output records
 
@@ -124,18 +111,8 @@ Positions and widths are in whatever unit the display is showing — the
 camera's calibrated unit normally, or pixels if *Units = pixels* is ticked.
 The two intensities are in raw camera counts.
 
-Two things to know when reading these from a scan script:
-
-- **The *Brightest box* selector changes what they mean.** When it is on, the
-  frame is masked to that box first, so all six records — including
-  `total_intensity` — describe the box rather than the whole frame.
-- **Writes are fire-and-forget, and NaNs are skipped.** A record simply holds
-  its previous value rather than going stale-flagged, so a scan should read
-  back deliberately (`bbl.epics.caget(..., stale=True)`) after changing
-  anything upstream.
-
-`publish_to_epics: false` in a config sets the lab-wide default for the *To
-EPICS* checkbox — useful where there are no analysis records to write to.
+`publish_to_epics: false` in a config sets the *To
+EPICS* checkbox to false— useful when on a system without EPICS.
 
 ## Architecture
 
@@ -144,17 +121,5 @@ Every camera is served through the same **EPICS areaDetector contract**
 `cameras/epics_areadetector.py`, and talks to all of them identically. Reads
 go through persistent auto-monitored PVs for speed.
 
-Two-image ("double") cameras publish `image1` and `image2` under a shared
+Two-image ("double") cameras (e.g. the EMPAD) publish `image1` and `image2` under a shared
 `UniqueId`, and beamview forms Normal, Cold, Hot and Diff from the pair.
-
-## Other ways to start it
-
-Occasionally useful, but `--config` is what you normally want:
-
-```
-python -m beamview.main --epics VPCAM:03           # one IOC directly, no config file
-python -m beamview.main --epics EMPAD --dual       # ...treating it as a two-image camera
-```
-
-`--dual` only applies to `--epics`; in a config file it is the per-camera
-`dual: true` key instead.
