@@ -28,6 +28,7 @@ orientation; **git history is the source of truth** for what changed.
       bbl.gun         center_laser_in_gun, fit_gun_aberration
       bbl.solenoid    solenoid_scan, fit_solenoid_scan
       bbl.fieldmaps   load_onaxis_field  (+ the .gdf maps, gitignored)
+      bbl.cnf         model_qe_map, patterns  (CNF photocathode masks)
 
   `_physics.py` is private and shared by gun/solenoid. Nothing is imported
   until touched — beamview uses `BBL.utilities` on lab machines that have
@@ -75,8 +76,15 @@ config (not probed). Reads use persistent auto-monitored PVs for speed.
   MATLAB convention; the rendered image itself is unchanged). This exists
   so beamview's screen frame stays right-handed relative to the accelerator
   physics convention the solenoid-scan fit assumes — see the beamview
-  memory for the mechanism and why. `BBL/get_frame.py`'s `xx` matches
+  memory for the mechanism and why. `BBL/image/frames.py`'s `xx` matches
   (negated); `plot_frame()` needed no changes.
+- **`bbl.cnf.model_qe_map` (new 2026-08)** models a lithographic mask seen
+  through a gaussian laser spot. It is a Fourier method — every primitive
+  has a closed-form transform, so nothing is rasterised and sub-pixel
+  features stay exact. Patterns are passed in as data (`bbl.cnf.patterns`
+  holds the five ported MATLAB masks), not hard-coded as in the MATLAB
+  original. Validated against the exact pixel-averaged erf product for a
+  blurred rectangle: `python BBL/cnf/test_qe_map.py`.
 
 ## Detailed assistant memory
 Richer context (decisions, history, hard-won gotchas) is in the machine-local

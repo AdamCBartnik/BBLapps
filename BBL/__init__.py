@@ -24,6 +24,7 @@ or pull the names you use often into the notebook's own namespace:
     gun         center_laser_in_gun, fit_gun_aberration
     solenoid    solenoid_scan, fit_solenoid_scan
     fieldmaps   load_onaxis_field
+    cnf         model_qe_map, patterns
 
 Everything else is private and lives with whatever uses it (_physics.py,
 the pv_tools sampling internals, live_plot's display helpers).
@@ -53,6 +54,7 @@ import os
 os.environ.setdefault("EPICS_CA_MAX_ARRAY_BYTES", "40000000")
 
 _subpackages = (
+    "cnf",
     "epics",
     "fieldmaps",
     "gun",

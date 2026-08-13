@@ -24,6 +24,7 @@ scans = [
 [tool.setuptools]
 packages = [
     "BBL",
+    "BBL.cnf",
     "BBL.epics",
     "BBL.fieldmaps",
     "BBL.gun",
