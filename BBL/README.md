@@ -31,7 +31,7 @@ Organised into subpackages
 
 ## `bbl.epics`
 
-### `caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, stale=False, return_std=False)`
+### `bbl.epics.caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, stale=False, return_std=False)`
 
 Read one or more PVs through the monitor cache. **Never raises** — an
 unreachable PV comes back as NaN, so a long scan doesn't die on one bad
@@ -45,21 +45,21 @@ channel. A sequence of names returns an array.
 | `stale` | Treat the cached value as stale, so a fresh update is required. E.g. use after a `caput`. |
 | `return_std` | Force the `(avg, std)` return even when `n_avg == 1`. |
 
-### `caput(pv_names, values, wait=True, timeout=5.0)`
+### `bbl.epics.caput(pv_names, values, wait=True, timeout=5.0)`
 
 Write one or more PVs. `wait=True` blocks until the IOC confirms the record
 processed; `wait=False` fires and returns. A scalar
 value broadcasts across a sequence of names. Returns `True` if every put
 landed — failures are printed, not raised.
 
-### `restore_pvs(*pv_names)`
+### `bbl.epics.restore_pvs(*pv_names)`
 
 Context manager that records PVs on entry and writes them back on exit. 
 The restore runs on **any** exit, including an
 exception or a Ctrl-C / kernel interrupt.
 
 ```python
-with restore_pvs("MA1CHA01_cmd", "MA1CVA01_cmd"):
+with bbl.epics.restore_pvs("MA1CHA01_cmd", "MA1CVA01_cmd"):
     ...  # scan
 ```
 
@@ -70,7 +70,7 @@ silently scanning something you can't put back would be worse than stopping.
 
 ## `bbl.plot`
 
-### `warmup()`
+### `bbl.plot.warmup()`
 
 This is a workaround for a jupyterlab annoyance. Run once in the top cell of
 a notebook right after `%matplotlib widget`. The first widget in a
@@ -78,7 +78,7 @@ fresh kernel needs a frontend handshake that can't complete while a scan is
 blocking the kernel — so without this, the first live plot of a session stays
 invisible until its scan finishes. 
 
-### `LivePlot(xlabel='', ylabel='', title='', ax=None, style='ro', capsize=3)`
+### `bbl.plot.LivePlot(xlabel='', ylabel='', title='', ax=None, style='ro', capsize=3)`
 
 A matplotlib error-bar plot that updates in place while a scan runs.
 
@@ -96,7 +96,7 @@ for i, s in enumerate(setpoints):
     lp.update(setpoints[:i+1], measured[:i+1], y_err=errs[:i+1])
 ```
 
-### `LivePlot.update(x, y, y_err=None, label=None, style=None)`
+### `bbl.plot.LivePlot.update(x, y, y_err=None, label=None, style=None)`
 
 Replace this trace's data and redraw. **Pass the full arrays every time** —
 `update` replaces what is drawn rather than appending to it, so the usual
@@ -113,7 +113,7 @@ The artist is rebuilt each call, because a matplotlib `ErrorbarContainer`
 can't have its data swapped in place. That is cheap at scan cadence. Calls
 `refresh()` for you, so a plain `update` loop needs nothing else.
 
-### `LivePlot.refresh()`
+### `bbl.plot.LivePlot.refresh()`
 
 Force a redraw now, from inside a blocking loop. `update` already calls it —
 you only need it directly after changing the axes yourself, say adding a fit
@@ -128,7 +128,7 @@ and pushes the frame straight to the browser.
 Autoscaling is applied only when it is still on, so a toolbar zoom or pan
 survives subsequent updates instead of being yanked back.
 
-### `LivePlot.set_interactive(enabled=True)`
+### `bbl.plot.LivePlot.set_interactive(enabled=True)`
 
 Freeze or unfreeze mouse interaction with the figure.
 
@@ -140,7 +140,7 @@ browser sends nothing at all, and `set_interactive(True)` gives it back.
 
 No-op outside Jupyter, so it is safe to leave in a script.
 
-### `get_colormap(name=None, m=256, p=1.0, return_list=False)`
+### `bbl.plot.get_colormap(name=None, m=256, p=1.0, return_list=False)`
 
 The lab's colormaps from a variety of sources, many from cmasher. Append `_r` to any name to reverse it.
 
@@ -157,7 +157,7 @@ The lab's colormaps from a variety of sources, many from cmasher. Append `_r` to
 
 ## `bbl.image` — camera frames
 
-### `get_frame(name, units='physical', timeout=5.0)`
+### `bbl.image.get_frame(name, units='physical', timeout=5.0)`
 
 Grab the current frame from a camera IOC, or load a saved snapshot.
 
@@ -175,7 +175,7 @@ Returns a dict: `image`, `xx`, `yy`, `title`, `camera_name`, `exposure_ms`,
 `width`, `height`, `roi`, `unique_id`, `timestamp`. Raises `RuntimeError` if
 no frame is available.
 
-### `plot_frame(data, ax=None, log=False, show_colorbar=True, cmap=None, vmin=None, vmax=None, title=None)`
+### `bbl.image.plot_frame(data, ax=None, log=False, show_colorbar=True, cmap=None, vmin=None, vmax=None, title=None)`
 
 Plot a `get_frame()` dict with matplotlib. Returns the Axes.
 
@@ -186,7 +186,7 @@ Plot a `get_frame()` dict with matplotlib. Returns the Axes.
 | `vmin`/`vmax` | Override the display range (default: the frame's stored one). |
 | `show_colorbar` | On by default. |
 
-### `screen_sensitivity_correction(frame, sensitivity, sigma=1.0, threshold=None, floor=0.25, erode=9, fill=nan, return_details=False)`
+### `bbl.image.screen_sensitivity_correction(frame, sensitivity, sigma=1.0, threshold=None, floor=0.25, erode=9, fill=nan, return_details=False)`
 
 Divide out a viewscreen's non-uniform response. `frame` and `sensitivity` are
 `get_frame()` dicts or plain 2-D arrays, and must be the same shape — same
@@ -209,7 +209,7 @@ Returns a corrected copy of `frame` — a dict if you passed one, so
 
 ## `bbl.utilities`
 
-### `ssss(fig=None, name='ssss', data=None, directory=None, dpi=150)`
+### `bbl.utilities.ssss(fig=None, name='ssss', data=None, directory=None, dpi=150)`
 
 "See something, save something" — writes a figure into today's data directory.
 
@@ -222,13 +222,13 @@ Returns a corrected copy of `frame` — a dict if you passed one, so
 
 Returns the `Path` of the PNG.
 
-### `next_ssss_stem(directory, prefix='ssss', reserve=())`
+### `bbl.utilities.next_ssss_stem(directory, prefix='ssss', reserve=())`
 
 The stem-picking behind `ssss`, exposed for anything that writes its own
 files. `reserve` is a list of extensions to create as empty placeholders
 before returning, so a concurrent saver can't claim the same number.
 
-### `get_todays_directory(day=None, n_relative_day=0)`
+### `bbl.utilities.get_todays_directory(day=None, n_relative_day=0)`
 
 The lab's dated data directory as a `Path` —
 `…/beamdata/YYYY/MM/YYYY-MM-DD`, rooted at `\\samba\bbl_online\beamdata` on
@@ -237,7 +237,7 @@ Windows and `/nfs/bbl/online/beamdata` otherwise.
 `day` accepts `None` (today), a negative int (days back), a `date`/`datetime`,
 or a date string. `n_relative_day` offsets from today. Future dates raise.
 
-### `polyfit_weights(x, y, y_err=None, deg=1)`
+### `bbl.utilities.polyfit_weights(x, y, y_err=None, deg=1)`
 
 Weighted polynomial fit, a port of `polyfitweights.m`. Returns
 `(coeffs, coeff_errs, cov)` with coefficients **lowest power first** — the
@@ -248,7 +248,7 @@ the covariance is *not* rescaled by the residuals, matching MATLAB. With no
 `y_err` the fit is unweighted and the returned errors are zero. Non-finite
 points — such as a scan point where `caget` bailed out — are dropped first.
 
-### `measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0, pause=0.0, max_pause=5.0, poly_deg=1, plot=True, stale=True, verbose=False)`
+### `bbl.utilities.measure_trend(cmd_pv, setpoints, monitor_pvs, n_avg=15, cmd_pause=0.0, pause=0.0, max_pause=5.0, poly_deg=1, plot=True, stale=True, verbose=False)`
 
 Scan one PV over `setpoints` and measure how other PVs respond. `cmd_pv` is
 restored at the end, including on Ctrl-C.
@@ -269,7 +269,7 @@ Returns a dict with `setpoints`, `avg`/`std` of shape `(n_points, n_monitors)`,
 
 ## `bbl.gun` — gun electrical centre
 
-### `center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2, calib_h=-0.044, calib_v=0.056, calib_kv=350.0, …)`
+### `bbl.gun.center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2, calib_h=-0.044, calib_v=0.056, calib_kv=350.0, …)`
 
 Raster the laser spot across the cathode, recentring the beam on the screen at
 each point, to find the gun's electrical centre. Returns a data dict; refit it
@@ -290,7 +290,7 @@ optionally `gun_volt` for momentum-scaling the corrector calibration.
 
 Timeouts, pauses and iteration caps have sensible defaults — see the docstring.
 
-### `fit_gun_aberration(data, beta0=None, verbose=True)`
+### `bbl.gun.fit_gun_aberration(data, beta0=None, verbose=True)`
 
 Fit the cubic-aberration model to a `center_laser_in_gun` result. Returns
 `params`, `errs`, `cov`, and `model_pos`.
@@ -303,7 +303,7 @@ rescaling of `beam_pos` is absorbed by the other parameters.
 
 ## `bbl.solenoid` — solenoid scan
 
-### `solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10, …)`
+### `bbl.solenoid.solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10, …)`
 
 Scan the solenoid, track the beam centroid's spiral, and fit it for the beam's
 position and angle at the solenoid entrance. Returns a data dict, already
@@ -326,7 +326,7 @@ fitted; refit with `fit_solenoid_scan(data, fieldmap, drift_length)`.
 | `intensity_min_frac`/`max_frac` | Target `peak_intensity` band as a fraction of full scale. Only used with `laser_power_cmd`. |
 | `degauss`, `degauss_current` | Pulse the solenoid ± then to zero before scanning, to remove hysteresis. |
 
-### `fit_solenoid_scan(data, fieldmap, drift_length, current_scale=1.0, brho=None, verbose=True)`
+### `bbl.solenoid.fit_solenoid_scan(data, fieldmap, drift_length, current_scale=1.0, brho=None, verbose=True)`
 
 Returns `params`/`errs` for `x_off`, `xp_off`, `y_off`, `yp_off`, plus `cov`
 and the fitted `model_x`/`model_y`. Offsets come out in `centroid_x/_y`'s unit
@@ -346,7 +346,7 @@ not the midpoint, so an asymmetric map is handled correctly.
 
 ## `bbl.fieldmaps`
 
-### `load_onaxis_field(gdf_path)`
+### `bbl.fieldmaps.load_onaxis_field(gdf_path)`
 
 Load an on-axis Bz(z) map, in tesla per amp, from a `.gdf` file. Handles both
 1-D maps and 2-D (r, z) maps, taking the on-axis slice in the latter case.
@@ -359,7 +359,7 @@ The `.gdf` maps themselves live in this directory but are gitignored.
 
 ## `bbl.cnf` — photocathode masks
 
-### `model_qe_map(pattern, sigma=0.0, extent=(220., 220.), shape=(300, 300), center=(0., 0.), laser_angle=0.0, qe_range=(0., 1.), invert=False, noise=0.0, oversample=1, pad_sigmas=5.0, verbose=True, rng=None)`
+### `bbl.cnf.model_qe_map(pattern, sigma=0.0, extent=(220., 220.), shape=(300, 300), center=(0., 0.), laser_angle=0.0, qe_range=(0., 1.), invert=False, noise=0.0, oversample=1, pad_sigmas=5.0, verbose=True, rng=None)`
 
 Model a lithographically patterned photocathode as a gaussian laser spot sees
 it — the pattern convolved with the spot. Returns `(M, x, y)` with `M` shaped
