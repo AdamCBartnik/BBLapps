@@ -89,12 +89,31 @@ A matplotlib error-bar plot that updates in place while a scan runs.
 | `style` | Default matplotlib format string for traces, e.g. `'ro'`. |
 | `capsize` | Error-bar cap size. |
 
+Two traces on one axes, each identified by its own `label` and told apart by
+its `style`:
+
 ```python
-lp = bbl.plot.LivePlot(xlabel="solenoid current (A)", ylabel="centroid x")
-for i, s in enumerate(setpoints):
-    ...
-    lp.update(setpoints[:i+1], measured[:i+1], y_err=errs[:i+1])
+lp = bbl.plot.LivePlot(xlabel="solenoid current (A)", ylabel="centroid (um)")
+
+done, cx, cx_err, cy, cy_err = [], [], [], [], []
+for current in setpoints:
+    bbl.epics.caput("SOL1_cmd", current)
+    x, xe = bbl.epics.caget("B24:centroid_x", n_avg=10, stale=True)
+    y, ye = bbl.epics.caget("B24:centroid_y", n_avg=10, stale=True)
+
+    done.append(current)
+    cx.append(x); cx_err.append(xe)
+    cy.append(y); cy_err.append(ye)
+
+    lp.update(done, cx, y_err=cx_err, label="x", style="ro")
+    lp.update(done, cy, y_err=cy_err, label="y", style="bs")
 ```
+
+Both `update` calls grow the same plot rather than fighting over it, because
+the labels differ. Give the same label twice and the second call replaces the
+first. Note that `label` is LivePlot's own key for the trace and is not passed
+to matplotlib, so it will not appear in `ax.legend()` — `style` is what
+distinguishes the traces on screen.
 
 ### `bbl.plot.LivePlot.update(x, y, y_err=None, label=None, style=None)`
 
