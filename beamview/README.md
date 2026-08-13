@@ -1,30 +1,27 @@
-# beamview
+# Beamview
 
-A live viewer and analysis tool for beam-camera images at **Cornell's Bright
+A camera viewer and analysis tool for **Cornell's Bright
 Beams Lab (BBL)** — PyQt5 + pyqtgraph, a Python port of the group's original
-MATLAB tool. It shows a camera, fits the spot, and publishes the results back
-to EPICS for scan scripts to read.
+MATLAB tool. It shows a camera image, does basic analysis, and publishes the results back
+to EPICS.
 
 ## Install
 
-Ordinary conda/pip. In miniforge:
+Ordinary conda/pip, e.g.
 
 ```
 mamba install -c conda-forge numpy scipy "pyqt=5" pyqtgraph h5py pyyaml pyepics
 pip install opencv-python-headless
 ```
 
-Then clone BBLapps and, from its root, `pip install -e .` — that is only for
-`BBL`, which beamview uses for colormaps and snapshot numbering. beamview
-itself runs from the checkout and is not installed.
+Then clone BBLapps and, from its root, `pip install -e .` — beamview uses BBL 
+for colormaps and snapshot numbering. 
 
 Two things that are easy to get wrong:
 
 - **Pin `pyqt=5`.** beamview imports PyQt5 explicitly, and an unpinned `pyqt`
   can resolve to Qt6.
-- **opencv is optional but wanted.** It is the fast median-filter path — about
-  2 ms versus 250 ms at 2048×1536. Without it beamview silently falls back to
-  scipy and just feels sluggish on big cameras, with nothing to tell you why.
+- **opencv is optional but wanted.** Used for (much) faster image processing, with fallback to scipy.
 
 **Big sensors also need `EPICS_CA_MAX_ARRAY_BYTES` set** on the client. The
 symptom is a failed transfer and a timed-out `ca.get` on the image array. Setting it to
@@ -33,12 +30,15 @@ variable.
 
 ## Running it
 
-```
-python -m beamview.main --config configs/b24.yaml
+```bash
+# Linux command to run python script directly
+python -m beamview.main --config configs/b24.yaml &
+
+# Using bash helper script
+beamview b24 &
 ```
 
-One YAML config per lab area, listing that area's cameras. (There are other
-ways to start it — see the end.)
+That starts beamview using the YAML config file associated with that lab area, listing only that area's cameras.
 
 On Windows, `windows_batch/Beamview.bat` is a double-clickable launcher. It
 lists every config in `configs/` by its lab name, and closes its console once
