@@ -123,3 +123,28 @@ go through persistent auto-monitored PVs for speed.
 
 Two-image ("double") cameras (e.g. the EMPAD) publish `image1` and `image2` under a shared
 `UniqueId`, and beamview forms Normal, Cold, Hot and Diff from the pair.
+
+### How the contract differs from stock areaDetector
+
+Almost not at all — that is the point. Everything beamview relies on to run a
+camera is standard areaDetector: `cam1:Acquire`, `ImageMode`, `AcquireTime`,
+`Gain`, the `MinX`/`MinY`/`SizeX`/`SizeY` ROI, `MaxSizeX_RBV`/`MaxSizeY_RBV`,
+`DataType_RBV`, and on the image side `image1:ArrayData`, `ArraySize0_RBV`,
+`ArraySize1_RBV`, `UniqueId_RBV`, `TimeStamp_RBV` and `ArrayCounter_RBV` (the
+new-frame monitor). A stock areaDetector IOC will run in beamview as-is.
+
+On top of that the house contract adds **three** records, all under `cam1:`,
+and all of which clients treat as optional:
+
+| Record | Why it exists | Without it |
+|---|---|---|
+| `CalibX`, `CalibY` | Micron-per-pixel scale, stored IOC-side so every client agrees on it and it survives a beamview restart. areaDetector has nowhere to keep this. | The camera falls back to pixel units. `bbl.image.get_frame` says so when it happens. |
+| `BitsPerPixel_RBV` | The *true* sensor depth — e.g. 10 bits inside a 16-bit container. areaDetector only describes the container, via `DataType_RBV`. | Falls back to the container size, so the saturation warning and "% of full scale" are computed against the wrong maximum. |
+
+Calibration is the pair worth insisting on, since it is what makes
+`centroid_x` a physical distance rather than a pixel count. `BitsPerPixel_RBV`
+matters much less, and only on cameras whose depth isn't a whole container.
+
+Drivers may serve further device-specific records (LED, lens position, CPU
+temperature, …) by declaring them in `CameraDriver.extension_pvs`. Those are
+per-camera, and nothing in beamview depends on them.
