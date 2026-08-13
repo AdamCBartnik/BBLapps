@@ -1,3 +1,5 @@
+<img src="windows_batch/beamview.png" alt="" width="120" align="right">
+
 # Beamview
 
 A camera viewer and analysis tool for **Cornell's Bright
