@@ -90,7 +90,9 @@ Some details in there:
 - **`refresh()` after drawing the fit**, since that artist was added directly
   to the axes rather than through `update`, which would have redrawn for us.
 
-## `bbl.epics`
+---
+
+# `bbl.epics`
 
 ### `bbl.epics.caget(pv_names, n_avg=1, pause=0.0, max_pause=5.0, stale=False, return_std=False)`
 
@@ -127,9 +129,10 @@ with bbl.epics.restore_pvs("MA1CHA01_cmd", "MA1CVA01_cmd"):
 Unlike `caget`/`caput`, this one **does** raise if a PV won't connect —
 silently scanning something you can't put back would be worse than stopping.
 
+
 ---
 
-## `bbl.plot`
+# `bbl.plot`
 
 ### `bbl.plot.warmup()`
 
@@ -223,9 +226,10 @@ The lab's colormaps from a variety of sources, many from cmasher. Append `_r` to
 `m` resamples to that many entries, `p` applies a power-law to the resampling.
 `return_list=True` is for consumers that build their own lookup table
 
+
 ---
 
-## `bbl.image` — camera frames
+# `bbl.image` — camera frames
 
 ### `bbl.image.get_frame(name, units='physical', timeout=5.0)`
 
@@ -275,9 +279,10 @@ the beam over the screen with beamview's *Save max value*.
 Returns a corrected copy of `frame` — a dict if you passed one, so
 `plot_frame` and `ssss` work on the result directly.
 
+
 ---
 
-## `bbl.utilities`
+# `bbl.utilities`
 
 ### `bbl.utilities.ssss(fig=None, name='ssss', data=None, directory=None, dpi=150)`
 
@@ -335,9 +340,10 @@ restored at the end, including on Ctrl-C.
 Returns a dict with `setpoints`, `avg`/`std` of shape `(n_points, n_monitors)`,
 `fits` as `{pv: (coeffs, coeff_errs)}`, and the `LivePlot` objects.
 
+
 ---
 
-## `bbl.gun` — gun electrical centre
+# `bbl.gun` — gun electrical centre
 
 ### `bbl.gun.center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2, calib_h=-0.044, calib_v=0.056, calib_kv=350.0, …)`
 
@@ -369,9 +375,10 @@ The electrical centre `xc`/`yc`/`theta` comes out in `laser_pos`'s unit (mm,
 the cathode side) regardless of what unit `beam_pos` is in — a uniform
 rescaling of `beam_pos` is absorbed by the other parameters.
 
+
 ---
 
-## `bbl.solenoid` — solenoid scan
+# `bbl.solenoid` — solenoid scan
 
 ### `bbl.solenoid.solenoid_scan(pvs, current_setpoints, fieldmap, drift_length, n_avg=10, …)`
 
@@ -412,9 +419,10 @@ and angles in that unit per metre.
 The solenoid centre is found as the Bz²-weighted centroid of the field map,
 not the midpoint, so an asymmetric map is handled correctly.
 
+
 ---
 
-## `bbl.fieldmaps`
+# `bbl.fieldmaps`
 
 ### `bbl.fieldmaps.load_onaxis_field(gdf_path)`
 
@@ -425,9 +433,10 @@ Returns `(z, bz)` sorted by z on a uniform grid — feed it straight to
 
 The `.gdf` maps themselves live in this directory but are gitignored.
 
+
 ---
 
-## `bbl.cnf` — photocathode masks
+# `bbl.cnf` — photocathode masks
 
 ### `bbl.cnf.model_qe_map(pattern, sigma=0.0, extent=(220., 220.), shape=(300, 300), center=(0., 0.), laser_angle=0.0, qe_range=(0., 1.), invert=False, noise=0.0, oversample=1, pad_sigmas=5.0, verbose=True, rng=None)`
 
