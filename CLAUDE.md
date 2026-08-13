@@ -6,7 +6,7 @@ orientation; **git history is the source of truth** for what changed.
 
 ## Top-level layout
 - `beamview/` — PyQt5 + pyqtgraph GUI for viewing/analyzing beam-camera images
-  (Python port of a MATLAB tool). Entry: `python -m beamview --config <yaml> | --epics <PREFIX> | --mock`.
+  (Python port of a MATLAB tool). Entry: `python -m beamview.main --config <yaml> | --epics <PREFIX> | --mock`.
 - `vpcam/ioc/` — camera IOCs (caproto) serving a standard **EPICS areaDetector**
   PV contract. `ad_ioc_base.py` is the one shared contract module; per-backend
   drivers sit on top. Standalone tools: `mock_ioc.py`, `gateway_ioc.py`,
@@ -62,7 +62,7 @@ config (not probed). Reads use persistent auto-monitored PVs for speed.
 ## Dev quickstart (this machine)
 - Python: `C:\ProgramData\miniforge3\python.exe` (NOT on PATH).
 - Mock camera for UI work: run `python vpcam/ioc/mock_ioc.py` (serves prefix
-  `MOCK`, dual-frame 1000x1000), then `python -m beamview --mock`.
+  `MOCK`, dual-frame 1000x1000), then `python -m beamview.main --mock`.
 - Only run ONE mock IOC at a time (Windows SO_REUSEADDR lets two bind 5064 and
   they interfere).
 - Tests: `beamview/test_ad_backend.py`, `vpcam/ioc/test_relay_chain.py`
