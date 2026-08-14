@@ -96,7 +96,7 @@ brightest region per frame. Sometimes simpler to use than specifying a static RO
 ## EPICS output records
 
 With *Enable Analysis* and *To EPICS* both ticked, beamview publishes six
-records each time it analyses a frame. Names are `<epics_prefix>:<record>`,
+records each time it analyzes a frame. Names are `<epics_prefix>:<record>`,
 using the prefix chosen in the GUI — so with `epics_prefix: "B24"` the first
 one is `B24:centroid_x`. If no prefix is set, the bare record name is used.
 
@@ -106,7 +106,7 @@ one is `B24:centroid_x`. If no prefix is set, the bare record name is used.
 | `centroid_y` | Vertical centroid |
 | `rms_x` | Horizontal rms width |
 | `rms_y` | Vertical rms width |
-| `total_intensity` | Sum over the analysed region |
+| `total_intensity` | Sum over the analyzed region |
 | `peak_intensity` | Brightest single pixel |
 
 Positions and widths are in whatever unit the display is showing — the

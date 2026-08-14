@@ -14,7 +14,7 @@ so `import BBL` stays fast and a missing optional dependency only breaks the sub
 
 ## Layout
 
-Organised into subpackages
+Organized into subpackages
 
 | Subpackage | Contents |
 |---|---|
@@ -255,7 +255,7 @@ Plot a `get_frame()` dict with matplotlib. Returns the Axes.
 
 | Argument | Meaning |
 |---|---|
-| `log` | Show `log10(1 + abs(image))`. Colour range auto-scales to the transformed data, since the stored display range describes the raw image. |
+| `log` | Show `log10(1 + abs(image))`. Color range auto-scales to the transformed data, since the stored display range describes the raw image. |
 | `cmap` | Override the colormap name (default: the frame's own, else `freeze`). Falls back to gray if the name is unknown. |
 | `vmin`/`vmax` | Override the display range (default: the frame's stored one). |
 | `show_colorbar` | On by default. |
@@ -343,12 +343,12 @@ Returns a dict with `setpoints`, `avg`/`std` of shape `(n_points, n_monitors)`,
 
 ---
 
-# `bbl.gun` — gun electrical centre
+# `bbl.gun` — gun electrical center
 
 ### `bbl.gun.center_laser_in_gun(pvs, scan_range=7.0, num_points=11, n_avg=2, calib_h=-0.044, calib_v=0.056, calib_kv=350.0, …)`
 
-Raster the laser spot across the cathode, recentring the beam on the screen at
-each point, to find the gun's electrical centre. Returns a data dict; refit it
+Raster the laser spot across the cathode, recentering the beam on the screen at
+each point, to find the gun's electrical center. Returns a data dict; refit it
 any time with `fit_gun_aberration`.
 
 `pvs` is a dict of PV names with keys `laser_h_cmd`/`_rdbk`,
@@ -360,9 +360,9 @@ optionally `gun_volt` for momentum-scaling the corrector calibration.
 |---|---|
 | `scan_range` | Full span per axis, mm on the cathode. |
 | `num_points` | Grid size per axis (`num_points²` points total). |
-| `calib_h`, `calib_v` | Corrector calibration, amps per screen unit, measured at `calib_kv`. **Signs matter** — a wrong sign makes the recentring loop diverge, and it aborts after `max_recenter_iter`. |
+| `calib_h`, `calib_v` | Corrector calibration, amps per screen unit, measured at `calib_kv`. **Signs matter** — a wrong sign makes the recentering loop diverge, and it aborts after `max_recenter_iter`. |
 | `laser_pos_accuracy` | Laser stage move tolerance, mm. |
-| `screen_pos_accuracy` | Recentring convergence tolerance, in `centroid_x/_y`'s unit. |
+| `screen_pos_accuracy` | Recentering convergence tolerance, in `centroid_x/_y`'s unit. |
 
 Timeouts, pauses and iteration caps have sensible defaults — see the docstring.
 
@@ -371,7 +371,7 @@ Timeouts, pauses and iteration caps have sensible defaults — see the docstring
 Fit the cubic-aberration model to a `center_laser_in_gun` result. Returns
 `params`, `errs`, `cov`, and `model_pos`.
 
-The electrical centre `xc`/`yc`/`theta` comes out in `laser_pos`'s unit (mm,
+The electrical center `xc`/`yc`/`theta` comes out in `laser_pos`'s unit (mm,
 the cathode side) regardless of what unit `beam_pos` is in — a uniform
 rescaling of `beam_pos` is absorbed by the other parameters.
 
@@ -407,16 +407,16 @@ fitted; refit with `fit_solenoid_scan(data, fieldmap, drift_length)`.
 
 Returns `params`/`errs` for `x_off`, `xp_off`, `y_off`, `yp_off`, plus `cov`
 and the fitted `model_x`/`model_y`. Offsets come out in `centroid_x/_y`'s unit
-and angles in that unit per metre.
+and angles in that unit per meter.
 
-> **`drift_length` must be accurate.** It is the surveyed distance in **metres**
-> from the *solenoid centre* to the screen. The fitted parameters depend
+> **`drift_length` must be accurate.** It is the surveyed distance in **meters**
+> from the *solenoid center* to the screen. The fitted parameters depend
 > strongly on it — a post-solenoid drift trades off against beam angle, so a
 > shorter drift with a bigger angle traces almost the same spiral as a longer
 > drift with a smaller one. Fit *quality* barely changes, so **the residual
 > will not warn you.** Supply the surveyed value; never tune it to the fit.
 
-The solenoid centre is found as the Bz²-weighted centroid of the field map,
+The solenoid center is found as the Bz²-weighted centroid of the field map,
 not the midpoint, so an asymmetric map is handled correctly.
 
 
@@ -445,7 +445,7 @@ it — the pattern convolved with the spot. Returns `(M, x, y)` with `M` shaped
 `(ny, nx)`, indexed `M[iy, ix]`.
 
 This is a Fourier method: every primitive has a closed-form transform, so
-**nothing is ever rasterised** and sub-pixel features stay exact. A 0.02 µm dot
+**nothing is ever rasterized** and sub-pixel features stay exact. A 0.02 µm dot
 on a 3.75 µm grid carries precisely its own area instead of occupying a whole
 pixel or vanishing depending on where the grid happens to fall. The FFT covers
 the output window rather than the lattice cell, so cost is independent of the
